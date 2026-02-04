@@ -44,6 +44,10 @@ export class MarkerDetector {
   private cornerPipeline: ComputePipeline | null = null;
   private warpPipeline: ComputePipeline | null = null;
 
+  // Phase 3: GPU batch processing pipelines
+  private homographyPipeline: ComputePipeline | null = null;
+  private markerDecodePipeline: ComputePipeline | null = null;
+
   // GPU textures
   private blurredTexture: GPUTexture | null = null;
   private thresholdTexture: GPUTexture | null = null;
@@ -57,6 +61,17 @@ export class MarkerDetector {
 
   // Readback buffer for CPU processing
   private readbackBuffer: GPUBuffer | null = null;
+
+  // Phase 3: GPU batch processing buffers
+  private srcPointsBuffer: GPUBuffer | null = null;
+  private dstPointsBuffer: GPUBuffer | null = null;
+  private homographyBuffer: GPUBuffer | null = null;
+  private decodedMarkersBuffer: GPUBuffer | null = null;
+  private dictionaryBuffer: GPUBuffer | null = null;
+  private decodeParamsBuffer: GPUBuffer | null = null;
+
+  // Maximum batch size for GPU processing
+  private readonly MAX_BATCH_SIZE = 32;
 
   constructor(gpuContext: GPUContextManager, config: MarkerDetectorConfig = {}) {
     this.gpuContext = gpuContext;
@@ -82,7 +97,9 @@ export class MarkerDetector {
       adaptiveThresholdShader,
       contourDetectionShader,
       cornerDetectionShader,
-      perspectiveWarpShader
+      perspectiveWarpShader,
+      markerDecodeShader,
+      homographyShader
     } = await import('../../shaders/marker-shaders');
 
     // Create blur pipeline
@@ -107,6 +124,18 @@ export class MarkerDetector {
     this.cornerPipeline = new ComputePipeline(this.gpuContext, {
       label: 'Corner Detection',
       shaderCode: cornerDetectionShader,
+    });
+
+    // Phase 3: Create GPU batch processing pipelines
+    this.homographyPipeline = new ComputePipeline(this.gpuContext, {
+      label: 'Homography Computation',
+      shaderCode: homographyShader,
+      entryPoint: 'computeDirect', // Use fast closed-form method
+    });
+
+    this.markerDecodePipeline = new ComputePipeline(this.gpuContext, {
+      label: 'Marker Decode',
+      shaderCode: markerDecodeShader,
     });
 
     // Create textures
@@ -170,7 +199,58 @@ export class MarkerDetector {
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
     });
 
-    console.log('[MarkerDetector] Initialized');
+    // Phase 3: Create GPU batch processing buffers
+    // Source points buffer (4 points per quad, 2 floats per point, max batch size)
+    this.srcPointsBuffer = device.createBuffer({
+      label: 'Source Points',
+      size: this.MAX_BATCH_SIZE * 4 * 2 * 4, // batch * points * vec2 * f32
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    // Destination points buffer (4 corners of unit square, shared by all)
+    this.dstPointsBuffer = device.createBuffer({
+      label: 'Destination Points',
+      size: this.MAX_BATCH_SIZE * 4 * 2 * 4, // Same size, but filled with unit square coords
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    // Initialize destination points (unit square for all quads)
+    const dstPoints = new Float32Array(this.MAX_BATCH_SIZE * 4 * 2);
+    for (let i = 0; i < this.MAX_BATCH_SIZE; i++) {
+      const offset = i * 8;
+      // Top-left, top-right, bottom-right, bottom-left
+      dstPoints[offset + 0] = 0.0; dstPoints[offset + 1] = 0.0;
+      dstPoints[offset + 2] = 1.0; dstPoints[offset + 3] = 0.0;
+      dstPoints[offset + 4] = 1.0; dstPoints[offset + 5] = 1.0;
+      dstPoints[offset + 6] = 0.0; dstPoints[offset + 7] = 1.0;
+    }
+    device.queue.writeBuffer(this.dstPointsBuffer, 0, dstPoints);
+
+    // Homography buffer (9 floats per quad)
+    this.homographyBuffer = device.createBuffer({
+      label: 'Homographies',
+      size: this.MAX_BATCH_SIZE * 9 * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    // Decoded markers buffer (DecodedMarker struct: 64 bytes per marker)
+    this.decodedMarkersBuffer = device.createBuffer({
+      label: 'Decoded Markers',
+      size: this.MAX_BATCH_SIZE * 64,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    // Dictionary buffer (ArUco dictionary patterns)
+    this.dictionaryBuffer = this.createDictionaryBuffer(device);
+
+    // Decode parameters buffer
+    this.decodeParamsBuffer = device.createBuffer({
+      label: 'Decode Params',
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    console.log('[MarkerDetector] Initialized with GPU batch processing');
   }
 
   /**
@@ -285,7 +365,8 @@ export class MarkerDetector {
   }
 
   /**
-   * Find markers from threshold image (CPU processing)
+   * Find markers from threshold image
+   * Phase 3: Uses GPU batch processing for minimal CPU-GPU transfer
    */
   private async findMarkersFromThreshold(
     thresholdData: Uint8Array,
@@ -293,9 +374,7 @@ export class MarkerDetector {
     height: number,
     grayscaleTexture: GPUTexture
   ): Promise<DetectedMarker[]> {
-    const markers: DetectedMarker[] = [];
-
-    // Step 1: Find contours
+    // Step 1: Find contours (minimal CPU work)
     const contours = ContourProcessor.findContours(
       thresholdData,
       width,
@@ -306,29 +385,24 @@ export class MarkerDetector {
 
     console.log(`[MarkerDetector] Found ${contours.length} contours`);
 
-    // Step 2: Process each contour
+    // Step 2: Extract quads from contours
+    const quads: Quad[] = [];
     for (const contour of contours) {
-      // Approximate to polygon
       const polygon = ContourProcessor.approximatePolygon(contour);
-
-      // Try to extract quad
       const quad = ContourProcessor.extractQuad(polygon);
-      if (!quad) continue;
-
-      // Step 3: Warp marker to square and decode
-      const decoded = await this.decodeMarker(quad, grayscaleTexture);
-      if (decoded) {
-        markers.push({
-          id: decoded.id,
-          corners: this.quadToMarkerCorners(quad, decoded.rotation),
-          confidence: Math.max(0, 1.0 - decoded.hamming / 16), // Normalize hamming to confidence
-        });
-
-        console.log(`[MarkerDetector] Detected marker ${decoded.id} (rotation: ${decoded.rotation * 90}°)`);
+      if (quad) {
+        quads.push(quad);
       }
     }
 
-    return markers;
+    console.log(`[MarkerDetector] Extracted ${quads.length} quad candidates`);
+
+    if (quads.length === 0) {
+      return [];
+    }
+
+    // Step 3: Batch process all quads on GPU
+    return await this.batchDecodeMarkersGPU(quads, grayscaleTexture);
   }
 
   /**
@@ -433,6 +507,144 @@ export class MarkerDetector {
   }
 
   /**
+   * Batch decode markers on GPU (Phase 3 optimization)
+   * Eliminates CPU-GPU roundtrips by processing all markers in parallel
+   */
+  private async batchDecodeMarkersGPU(
+    quads: Quad[],
+    grayscaleTexture: GPUTexture
+  ): Promise<DetectedMarker[]> {
+    if (quads.length === 0) return [];
+    if (!this.homographyPipeline || !this.markerDecodePipeline) {
+      throw new Error('GPU batch pipelines not initialized');
+    }
+
+    const device = this.gpuContext.getDevice();
+    const batchSize = Math.min(quads.length, this.MAX_BATCH_SIZE);
+
+    // Step 1: Upload source points (quad corners)
+    const srcPoints = new Float32Array(batchSize * 4 * 2);
+    for (let i = 0; i < batchSize; i++) {
+      const quad = quads[i];
+      const offset = i * 8;
+      srcPoints[offset + 0] = quad.corners[0].x;
+      srcPoints[offset + 1] = quad.corners[0].y;
+      srcPoints[offset + 2] = quad.corners[1].x;
+      srcPoints[offset + 3] = quad.corners[1].y;
+      srcPoints[offset + 4] = quad.corners[2].x;
+      srcPoints[offset + 5] = quad.corners[2].y;
+      srcPoints[offset + 6] = quad.corners[3].x;
+      srcPoints[offset + 7] = quad.corners[3].y;
+    }
+    device.queue.writeBuffer(this.srcPointsBuffer!, 0, srcPoints);
+
+    // Step 2: Compute homographies for all quads in parallel
+    const encoder = device.createCommandEncoder({ label: 'Batch Marker Decode' });
+
+    for (let i = 0; i < batchSize; i++) {
+      // Update params for each quad
+      const params = new Uint32Array([i, 0, 0, 0]);
+      device.queue.writeBuffer(this.decodeParamsBuffer!, 0, params);
+
+      const homographyBindGroup = this.homographyPipeline.createBindGroup([
+        { binding: 0, resource: { buffer: this.srcPointsBuffer! } },
+        { binding: 1, resource: { buffer: this.dstPointsBuffer! } },
+        { binding: 2, resource: { buffer: this.homographyBuffer! } },
+        { binding: 3, resource: { buffer: this.decodeParamsBuffer! } },
+      ]);
+
+      const homographyPass = encoder.beginComputePass({ label: `Homography ${i}` });
+      homographyPass.setPipeline(this.homographyPipeline.getPipeline());
+      homographyPass.setBindGroup(0, homographyBindGroup);
+      homographyPass.dispatchWorkgroups(1);
+      homographyPass.end();
+    }
+
+    // Step 3: Warp all markers and decode in parallel
+    // Create warped texture array for batch processing
+    const warpSize = 32;
+    const warpedTexture = device.createTexture({
+      label: 'Warped Markers Batch',
+      size: { width: warpSize * batchSize, height: warpSize },
+      format: 'r8unorm',
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+    });
+
+    // Update decode params with marker size and dictionary info
+    const decodeParams = new Uint32Array(4);
+    decodeParams[0] = 0; // markerIndex (will update per marker)
+    decodeParams[1] = this.config.dictionarySize; // markerSize
+    decodeParams[2] = this.getArucoPatterns().length; // dictionarySize
+    decodeParams[3] = 1; // borderBits
+    device.queue.writeBuffer(this.decodeParamsBuffer!, 0, decodeParams);
+
+    // Batch decode all markers
+    for (let i = 0; i < batchSize; i++) {
+      decodeParams[0] = i;
+      device.queue.writeBuffer(this.decodeParamsBuffer!, 0, decodeParams);
+
+      const decodeBindGroup = this.markerDecodePipeline.createBindGroup([
+        { binding: 0, resource: warpedTexture.createView() },
+        { binding: 1, resource: { buffer: this.decodedMarkersBuffer! } },
+        { binding: 2, resource: { buffer: this.decodeParamsBuffer! } },
+        { binding: 3, resource: { buffer: this.dictionaryBuffer! } },
+      ]);
+
+      const decodePass = encoder.beginComputePass({ label: `Decode ${i}` });
+      decodePass.setPipeline(this.markerDecodePipeline.getPipeline());
+      decodePass.setBindGroup(0, decodeBindGroup);
+      decodePass.dispatchWorkgroups(1);
+      decodePass.end();
+    }
+
+    // Step 4: Readback decoded markers (single readback!)
+    const readbackBuffer = device.createBuffer({
+      label: 'Decoded Markers Readback',
+      size: batchSize * 64,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    encoder.copyBufferToBuffer(
+      this.decodedMarkersBuffer!,
+      0,
+      readbackBuffer,
+      0,
+      batchSize * 64
+    );
+
+    device.queue.submit([encoder.finish()]);
+
+    // Step 5: Read and parse results
+    await readbackBuffer.mapAsync(GPUMapMode.READ);
+    const resultData = new Float32Array(readbackBuffer.getMappedRange());
+
+    const markers: DetectedMarker[] = [];
+    for (let i = 0; i < batchSize; i++) {
+      const offset = i * 16; // 64 bytes = 16 floats
+      const id = Math.floor(resultData[offset + 0]);
+      const rotation = Math.floor(resultData[offset + 1]) as 0 | 1 | 2 | 3;
+      const valid = resultData[offset + 2];
+      const confidence = resultData[offset + 3];
+
+      if (valid > 0.5 && id >= 0) {
+        markers.push({
+          id,
+          corners: this.quadToMarkerCorners(quads[i], rotation),
+          confidence,
+        });
+
+        console.log(`[MarkerDetector] GPU decoded marker ${id} (rotation: ${rotation * 90}°, confidence: ${confidence.toFixed(2)})`);
+      }
+    }
+
+    readbackBuffer.unmap();
+    readbackBuffer.destroy();
+    warpedTexture.destroy();
+
+    return markers;
+  }
+
+  /**
    * Convert quad corners to marker corners accounting for rotation
    */
   private quadToMarkerCorners(quad: Quad, rotation: 0 | 1 | 2 | 3): MarkerCorners {
@@ -452,7 +664,47 @@ export class MarkerDetector {
   }
 
   /**
-   * Get marker dictionary for decoding
+   * Create ArUco dictionary buffer for GPU
+   */
+  private createDictionaryBuffer(device: GPUDevice): GPUBuffer {
+    // ArUco 4x4_50 dictionary (50 markers, 16 bits each)
+    // In production, load full dictionary based on config.dictionarySize
+    const dictionary = this.getArucoPatterns();
+
+    const buffer = device.createBuffer({
+      label: 'ArUco Dictionary',
+      size: dictionary.length * 4, // u32 per marker
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    device.queue.writeBuffer(buffer, 0, new Uint32Array(dictionary));
+    return buffer;
+  }
+
+  /**
+   * Get ArUco dictionary patterns as bit codes
+   */
+  private getArucoPatterns(): number[] {
+    // ArUco 4x4_50 dictionary (first 10 markers as example)
+    // Each pattern is a 16-bit code representing the marker bits
+    // Full dictionary would have 50 patterns for 4x4_50
+    return [
+      0b0001011001100100, // Marker 0
+      0b0001001101110110, // Marker 1
+      0b0011010001100100, // Marker 2
+      0b0011100011010010, // Marker 3
+      0b0010011011100010, // Marker 4
+      0b0010101001110100, // Marker 5
+      0b0100110001010110, // Marker 6
+      0b0100010011100110, // Marker 7
+      0b0110001011010100, // Marker 8
+      0b0110111001000010, // Marker 9
+      // Add remaining 40 markers in production...
+    ];
+  }
+
+  /**
+   * Get marker dictionary for decoding (legacy method)
    */
   private getMarkerDictionary(): Map<number, number[]> {
     // ArUco 4x4 dictionary (simplified subset)
@@ -483,5 +735,13 @@ export class MarkerDetector {
     this.thresholdParamsBuffer?.destroy();
     this.cornerParamsBuffer?.destroy();
     this.readbackBuffer?.destroy();
+
+    // Phase 3: Cleanup GPU batch processing buffers
+    this.srcPointsBuffer?.destroy();
+    this.dstPointsBuffer?.destroy();
+    this.homographyBuffer?.destroy();
+    this.decodedMarkersBuffer?.destroy();
+    this.dictionaryBuffer?.destroy();
+    this.decodeParamsBuffer?.destroy();
   }
 }

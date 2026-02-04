@@ -3,6 +3,12 @@
  * Exports WGSL shader code for marker detection pipeline
  */
 
+// GPU marker decoding shaders (Phase 3 optimization)
+import markerDecodeShader from './markers/marker-decode.wgsl';
+import homographyShader from './markers/homography.wgsl';
+
+export { markerDecodeShader, homographyShader };
+
 export const gaussianBlurShader = `
 // Gaussian Blur Shader (Separable)
 // Two-pass blur for efficiency: horizontal then vertical
