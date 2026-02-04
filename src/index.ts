@@ -59,8 +59,28 @@ export {
   type Point3D,
 } from './core/detection/point-cloud';
 
+// Estimation
+export {
+  LightEstimator,
+  type LightEstimate,
+  type LightEstimatorConfig,
+} from './core/estimation/light-estimator';
+export {
+  OcclusionHandler,
+  type OcclusionConfig,
+} from './core/estimation/occlusion-handler';
+
+// Utils
+export {
+  PerformanceMonitor,
+  type PerformanceMetrics,
+  type PerformanceConfig,
+} from './utils/performance-monitor';
+
 // Shaders
 export { planeShaders } from './shaders/plane-shaders';
+export { depthShaders } from './shaders/depth-shaders';
+export { lightingShaders } from './shaders/lighting-shaders';
 
 // Version
-export const VERSION = '0.3.0';
+export const VERSION = '0.4.0';
