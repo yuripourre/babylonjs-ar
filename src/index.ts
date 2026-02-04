@@ -15,10 +15,29 @@ export {
 } from './core/gpu/compute-pipeline';
 export { CameraManager, type CameraConfig, type CameraFrame } from './core/camera/camera-manager';
 
+// Tracking and detection
+export {
+  Tracker,
+  type TrackerConfig,
+  type TrackedMarker,
+} from './core/tracking/tracker';
+export {
+  MarkerDetector,
+  type MarkerDetectorConfig,
+  type DetectedMarker,
+  type MarkerCorners,
+} from './core/detection/marker-detector';
+export {
+  PoseEstimator,
+  type CameraIntrinsics,
+  type Pose,
+} from './core/tracking/pose-estimator';
+export { KalmanFilter } from './core/tracking/kalman-filter';
+
 // Math utilities
 export { Matrix4 } from './core/math/matrix';
 export { Vector3 } from './core/math/vector';
 export { Quaternion } from './core/math/quaternion';
 
 // Version
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';

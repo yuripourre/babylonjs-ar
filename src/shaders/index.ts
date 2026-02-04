@@ -3,6 +3,9 @@
  * Exports WGSL shader code as strings
  */
 
+// Re-export marker shaders
+export * from './marker-shaders';
+
 // Preprocessing shaders
 export const grayscaleShader = `
 // Grayscale Conversion Shader

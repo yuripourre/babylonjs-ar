@@ -1,6 +1,6 @@
 {
   "name": "babylonjs-ar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "High-performance WebGPU AR library for Babylon.js with marker tracking and plane detection",
   "type": "module",
   "main": "./dist/index.js",

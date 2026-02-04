@@ -7,12 +7,15 @@ import { GPUContextManager } from './gpu/gpu-context';
 import { CameraManager, type CameraConfig } from './camera/camera-manager';
 import { ComputePipeline, calculateWorkgroupCount } from './gpu/compute-pipeline';
 import { grayscaleShader } from '../shaders/index';
+import { Tracker, type TrackerConfig, type TrackedMarker } from './tracking/tracker';
 
 export interface AREngineConfig {
   camera?: CameraConfig;
   gpu?: {
     powerPreference?: 'low-power' | 'high-performance';
   };
+  tracker?: TrackerConfig;
+  enableMarkerTracking?: boolean;
 }
 
 export interface ARFrame {
@@ -21,13 +24,16 @@ export interface ARFrame {
   grayscaleTexture: GPUTexture;
   width: number;
   height: number;
+  markers?: TrackedMarker[];
 }
 
 export class AREngine {
   private gpuContext: GPUContextManager;
   private cameraManager: CameraManager;
+  private tracker: Tracker | null = null;
   private isInitialized = false;
   private isRunning = false;
+  private enableMarkerTracking = false;
 
   // GPU resources
   private grayscalePipeline: ComputePipeline | null = null;
@@ -38,6 +44,10 @@ export class AREngine {
   private frameCount = 0;
   private lastFrameTime = 0;
   private fps = 0;
+
+  // Marker tracking state
+  private latestMarkers: TrackedMarker[] = [];
+  private isTrackingInProgress = false;
 
   // Frame callback
   private onFrameCallback: ((frame: ARFrame) => void) | null = null;
@@ -75,6 +85,14 @@ export class AREngine {
 
     // Initialize GPU pipelines
     await this.initializePipelines(resolution.width, resolution.height);
+
+    // Initialize tracker if enabled
+    this.enableMarkerTracking = config.enableMarkerTracking ?? false;
+    if (this.enableMarkerTracking) {
+      this.tracker = new Tracker(this.gpuContext, config.tracker);
+      await this.tracker.initialize(resolution.width, resolution.height);
+      console.log('[AREngine] Marker tracking enabled');
+    }
 
     this.isInitialized = true;
     console.log('[AREngine] Initialized successfully');
@@ -186,13 +204,27 @@ export class AREngine {
         this.grayscalePipeline.executeAndSubmit(bindGroup, workgroupCount);
       }
 
-      // Create AR frame data
+      // Track markers asynchronously (non-blocking)
+      if (this.enableMarkerTracking && this.tracker && this.grayscaleTexture && !this.isTrackingInProgress) {
+        this.isTrackingInProgress = true;
+        // Run tracking in background without blocking frame loop
+        this.tracker.track(this.grayscaleTexture).then(markers => {
+          this.latestMarkers = markers;
+          this.isTrackingInProgress = false;
+        }).catch(error => {
+          console.error('[AREngine] Tracking error:', error);
+          this.isTrackingInProgress = false;
+        });
+      }
+
+      // Create AR frame data (use latest markers from previous frame)
       const arFrame: ARFrame = {
         timestamp: cameraFrame.timestamp,
         cameraTexture: externalTexture as any, // External texture
         grayscaleTexture: this.grayscaleTexture!,
         width: cameraFrame.width,
         height: cameraFrame.height,
+        markers: this.enableMarkerTracking ? this.latestMarkers : undefined,
       };
 
       // Invoke callback
@@ -249,6 +281,13 @@ export class AREngine {
   }
 
   /**
+   * Get tracker
+   */
+  getTracker(): Tracker | null {
+    return this.tracker;
+  }
+
+  /**
    * Clean up resources
    */
   destroy(): void {
@@ -257,6 +296,11 @@ export class AREngine {
     if (this.grayscaleTexture) {
       this.grayscaleTexture.destroy();
       this.grayscaleTexture = null;
+    }
+
+    if (this.tracker) {
+      this.tracker.destroy();
+      this.tracker = null;
     }
 
     this.cameraManager.destroy();

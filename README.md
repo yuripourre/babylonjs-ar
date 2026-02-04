@@ -13,14 +13,25 @@ High-performance WebGPU AR library for Babylon.js with hybrid marker tracking an
 
 ## Status
 
-🚧 **Phase 1: Foundation** (In Progress)
+🚧 **Phase 2: Marker Detection** (Infrastructure Complete)
 
+### Phase 1: Foundation ✅
 - ✅ Project setup
 - ✅ WebGPU context and pipeline infrastructure
 - ✅ Camera acquisition with VideoFrame
 - ✅ Grayscale conversion compute shader
 - ✅ Main AR engine loop
 - ✅ Basic example
+
+### Phase 2: Marker Detection ✅ (Infrastructure)
+- ✅ Preprocessing shaders (blur, threshold)
+- ✅ Detection shaders (contour, corner, warp)
+- ✅ Marker detector pipeline
+- ✅ Pose estimator (PnP)
+- ✅ Kalman filter
+- ✅ Tracker coordination
+- ✅ Marker tracking example
+- ⚠️ CPU processing (pending)
 
 ## Quick Start
 
