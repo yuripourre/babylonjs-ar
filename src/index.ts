@@ -49,6 +49,18 @@ export {
   type Keypoint,
   type FeatureMatch,
 } from './core/detection/feature-detector';
+export {
+  PlaneDetector,
+  type PlaneConfig,
+  type DetectedPlane,
+} from './core/detection/plane-detector';
+export {
+  PointCloudGenerator,
+  type Point3D,
+} from './core/detection/point-cloud';
+
+// Shaders
+export { planeShaders } from './shaders/plane-shaders';
 
 // Version
 export const VERSION = '0.3.0';
