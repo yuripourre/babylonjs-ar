@@ -43,11 +43,15 @@ export class LightEstimator {
   // Buffers
   private shCoefficientsBuffer: GPUBuffer | null = null;
   private shParamsBuffer: GPUBuffer | null = null;
-  private shReadbackBuffer: GPUBuffer | null = null;
+
+  // Double-buffered readback for async operation
+  private shReadbackBuffers: [GPUBuffer | null, GPUBuffer | null] = [null, null];
+  private currentReadbackIndex = 0;
 
   // State
   private currentEstimate: LightEstimate | null = null;
   private lastUpdateTime = 0;
+  private pendingReadback: Promise<LightEstimate | null> | null = null;
 
   constructor(gpuContext: GPUContextManager, config: LightEstimatorConfig = {}) {
     this.gpuContext = gpuContext;
@@ -102,13 +106,20 @@ export class LightEstimator {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    this.shReadbackBuffer = device.createBuffer({
-      label: 'SH Readback',
+    // Create double-buffered readback buffers
+    this.shReadbackBuffers[0] = device.createBuffer({
+      label: 'SH Readback 0',
       size: coeffBufferSize,
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
     });
 
-    console.log('[LightEstimator] Initialized');
+    this.shReadbackBuffers[1] = device.createBuffer({
+      label: 'SH Readback 1',
+      size: coeffBufferSize,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    console.log('[LightEstimator] Initialized with double-buffered readback');
   }
 
   /**
@@ -198,11 +209,12 @@ export class LightEstimator {
     extractPass.dispatchWorkgroups(1);
     extractPass.end();
 
-    // Copy to readback
+    // Copy to current readback buffer
+    const readbackBuffer = this.shReadbackBuffers[this.currentReadbackIndex]!;
     encoder.copyBufferToBuffer(
       this.shCoefficientsBuffer!,
       0,
-      this.shReadbackBuffer!,
+      readbackBuffer,
       0,
       11 * 100 * 16
     );
@@ -210,8 +222,8 @@ export class LightEstimator {
     device.queue.submit([encoder.finish()]);
 
     // Read back results
-    await this.shReadbackBuffer!.mapAsync(GPUMapMode.READ);
-    const data = new Float32Array(this.shReadbackBuffer!.getMappedRange());
+    await readbackBuffer.mapAsync(GPUMapMode.READ);
+    const data = new Float32Array(readbackBuffer.getMappedRange());
 
     // Extract SH coefficients (first 9, RGB interleaved)
     const shCoefficients = new Float32Array(27);
@@ -237,7 +249,10 @@ export class LightEstimator {
     ];
     const intensity = data[10 * 4 + 3];
 
-    this.shReadbackBuffer!.unmap();
+    readbackBuffer.unmap();
+
+    // Swap buffers for next frame
+    this.currentReadbackIndex = 1 - this.currentReadbackIndex;
 
     // Estimate color temperature
     const colorTemperature = this.estimateColorTemperature(ambientColor);
@@ -323,7 +338,9 @@ export class LightEstimator {
   destroy(): void {
     this.shCoefficientsBuffer?.destroy();
     this.shParamsBuffer?.destroy();
-    this.shReadbackBuffer?.destroy();
+    this.shReadbackBuffers[0]?.destroy();
+    this.shReadbackBuffers[1]?.destroy();
     this.currentEstimate = null;
+    this.pendingReadback = null;
   }
 }

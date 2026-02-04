@@ -73,6 +73,16 @@ export class Vector3 {
   }
 
   /**
+   * Squared distance to another vector (faster, avoids sqrt)
+   */
+  distanceToSquared(other: Vector3): number {
+    const dx = this.x - other.x;
+    const dy = this.y - other.y;
+    const dz = this.z - other.z;
+    return dx * dx + dy * dy + dz * dz;
+  }
+
+  /**
    * Clone vector
    */
   clone(): Vector3 {

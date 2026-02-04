@@ -6,6 +6,7 @@
 import { Vector3 } from '../math/vector';
 import type { Keypoint } from './feature-detector';
 import type { CameraIntrinsics } from '../tracking/pose-estimator';
+import { KDTree } from '../../utils/kdtree';
 
 export interface Point3D {
   position: Vector3;
@@ -181,7 +182,8 @@ export class PointCloudGenerator {
   }
 
   /**
-   * Compute normals for point cloud
+   * Compute normals for point cloud using k-d tree
+   * Optimized from O(n²) to O(n log n)
    */
   computeNormals(
     points: Float32Array,
@@ -190,35 +192,40 @@ export class PointCloudGenerator {
     const numPoints = points.length / 4;
     const normals = new Float32Array(points.length);
 
-    // For each point, find k nearest neighbors and compute normal
+    // Convert to Vector3 array
+    const pointsVec: Vector3[] = [];
     for (let i = 0; i < numPoints; i++) {
-      const p = new Vector3(
-        points[i * 4],
-        points[i * 4 + 1],
-        points[i * 4 + 2]
+      pointsVec.push(
+        new Vector3(
+          points[i * 4],
+          points[i * 4 + 1],
+          points[i * 4 + 2]
+        )
+      );
+    }
+
+    // Build k-d tree for fast nearest neighbor queries
+    // O(n log n) build time
+    const kdtree = new KDTree();
+    kdtree.build(pointsVec);
+
+    // For each point, find k nearest neighbors and compute normal
+    // O(n log n) total - each query is O(log n)
+    for (let i = 0; i < numPoints; i++) {
+      const p = pointsVec[i];
+
+      // Find k+1 nearest neighbors (includes self)
+      const neighbors = kdtree.kNearestNeighbors(p, k + 1);
+
+      // Remove self from neighbors
+      const filteredNeighbors = neighbors.filter(
+        (n) => n !== p && p.distanceToSquared(n) > 0.0001
       );
 
-      // Find k nearest (simplified: just use spatial neighbors)
-      const neighbors: Vector3[] = [];
-
-      for (let j = 0; j < numPoints && neighbors.length < k; j++) {
-        if (i === j) continue;
-
-        const q = new Vector3(
-          points[j * 4],
-          points[j * 4 + 1],
-          points[j * 4 + 2]
-        );
-
-        if (p.distanceTo(q) < 0.5) {
-          neighbors.push(q);
-        }
-      }
-
-      if (neighbors.length >= 3) {
+      if (filteredNeighbors.length >= 3) {
         // Compute normal using PCA (simplified: cross product)
-        const v1 = neighbors[0].subtract(p);
-        const v2 = neighbors[1].subtract(p);
+        const v1 = filteredNeighbors[0].subtract(p);
+        const v2 = filteredNeighbors[1].subtract(p);
         const normal = v1.cross(v2).normalize();
 
         normals[i * 4] = normal.x;
