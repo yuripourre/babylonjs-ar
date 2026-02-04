@@ -8,6 +8,9 @@ import { CameraManager, type CameraConfig } from './camera/camera-manager';
 import { ComputePipeline, calculateWorkgroupCount } from './gpu/compute-pipeline';
 import { grayscaleShader } from '../shaders/index';
 import { Tracker, type TrackerConfig, type TrackedMarker } from './tracking/tracker';
+import { PlaneDetector, type PlaneConfig, type DetectedPlane } from './detection/plane-detector';
+import { PointCloudGenerator } from './detection/point-cloud';
+import { PoseEstimator } from './tracking/pose-estimator';
 
 export interface AREngineConfig {
   camera?: CameraConfig;
@@ -15,7 +18,9 @@ export interface AREngineConfig {
     powerPreference?: 'low-power' | 'high-performance';
   };
   tracker?: TrackerConfig;
+  planeDetector?: PlaneConfig;
   enableMarkerTracking?: boolean;
+  enablePlaneDetection?: boolean;
 }
 
 export interface ARFrame {
@@ -25,15 +30,19 @@ export interface ARFrame {
   width: number;
   height: number;
   markers?: TrackedMarker[];
+  planes?: DetectedPlane[];
 }
 
 export class AREngine {
   private gpuContext: GPUContextManager;
   private cameraManager: CameraManager;
   private tracker: Tracker | null = null;
+  private planeDetector: PlaneDetector | null = null;
+  private pointCloudGenerator: PointCloudGenerator | null = null;
   private isInitialized = false;
   private isRunning = false;
   private enableMarkerTracking = false;
+  private enablePlaneDetection = false;
 
   // GPU resources
   private grayscalePipeline: ComputePipeline | null = null;
@@ -48,6 +57,10 @@ export class AREngine {
   // Marker tracking state
   private latestMarkers: TrackedMarker[] = [];
   private isTrackingInProgress = false;
+
+  // Plane detection state
+  private latestPlanes: DetectedPlane[] = [];
+  private isPlaneDetectionInProgress = false;
 
   // Frame callback
   private onFrameCallback: ((frame: ARFrame) => void) | null = null;
@@ -92,6 +105,23 @@ export class AREngine {
       this.tracker = new Tracker(this.gpuContext, config.tracker);
       await this.tracker.initialize(resolution.width, resolution.height);
       console.log('[AREngine] Marker tracking enabled');
+    }
+
+    // Initialize plane detector if enabled
+    this.enablePlaneDetection = config.enablePlaneDetection ?? false;
+    if (this.enablePlaneDetection) {
+      this.planeDetector = new PlaneDetector(this.gpuContext, config.planeDetector);
+      await this.planeDetector.initialize(resolution.width, resolution.height);
+
+      // Create point cloud generator
+      const intrinsics = PoseEstimator.estimateIntrinsics(
+        resolution.width,
+        resolution.height,
+        60 // Assume 60° FOV
+      );
+      this.pointCloudGenerator = new PointCloudGenerator(intrinsics);
+
+      console.log('[AREngine] Plane detection enabled');
     }
 
     this.isInitialized = true;
@@ -217,7 +247,23 @@ export class AREngine {
         });
       }
 
-      // Create AR frame data (use latest markers from previous frame)
+      // Detect planes asynchronously (non-blocking)
+      // Note: Requires depth data - will be fully functional in Phase 5
+      if (this.enablePlaneDetection && this.planeDetector && this.pointCloudGenerator && !this.isPlaneDetectionInProgress) {
+        // TODO: In Phase 5, we'll have actual depth estimation
+        // For now, plane detection is initialized but needs depth data to function
+        // Placeholder: would generate point cloud from depth and detect planes
+        // this.isPlaneDetectionInProgress = true;
+        // const depthData = await this.estimateDepth(grayscaleTexture);
+        // const points = this.pointCloudGenerator.generateFromDepth(depthData, width, height);
+        // const normals = this.pointCloudGenerator.computeNormals(points);
+        // this.planeDetector.detectPlanes(points, normals).then(planes => {
+        //   this.latestPlanes = planes;
+        //   this.isPlaneDetectionInProgress = false;
+        // });
+      }
+
+      // Create AR frame data (use latest data from previous frame)
       const arFrame: ARFrame = {
         timestamp: cameraFrame.timestamp,
         cameraTexture: externalTexture as any, // External texture
@@ -225,6 +271,7 @@ export class AREngine {
         width: cameraFrame.width,
         height: cameraFrame.height,
         markers: this.enableMarkerTracking ? this.latestMarkers : undefined,
+        planes: this.enablePlaneDetection ? this.latestPlanes : undefined,
       };
 
       // Invoke callback
@@ -288,6 +335,20 @@ export class AREngine {
   }
 
   /**
+   * Get plane detector
+   */
+  getPlaneDetector(): PlaneDetector | null {
+    return this.planeDetector;
+  }
+
+  /**
+   * Get point cloud generator
+   */
+  getPointCloudGenerator(): PointCloudGenerator | null {
+    return this.pointCloudGenerator;
+  }
+
+  /**
    * Clean up resources
    */
   destroy(): void {
@@ -301,6 +362,11 @@ export class AREngine {
     if (this.tracker) {
       this.tracker.destroy();
       this.tracker = null;
+    }
+
+    if (this.planeDetector) {
+      this.planeDetector.destroy();
+      this.planeDetector = null;
     }
 
     this.cameraManager.destroy();

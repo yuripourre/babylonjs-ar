@@ -6,6 +6,7 @@
 import type { GPUContextManager } from '../gpu/gpu-context';
 import { ComputePipeline, calculateWorkgroupCount } from '../gpu/compute-pipeline';
 import { Vector3 } from '../math/vector';
+import { planeShaders } from '../../shaders/plane-shaders';
 
 export interface PlaneConfig {
   maxPlanes?: number;
@@ -75,25 +76,20 @@ export class PlaneDetector {
   async initialize(width: number, height: number): Promise<void> {
     const device = this.gpuContext.getDevice();
 
-    // Load shaders (placeholder - would load actual WGSL files)
-    const normalShader = `@compute @workgroup_size(16, 16) fn main() {}`;
-    const ransacShader = `@compute @workgroup_size(64) fn main() {}`;
-    const refinementShader = `@compute @workgroup_size(1) fn main() {}`;
-
-    // Create pipelines
+    // Create pipelines with actual WGSL shaders
     this.normalPipeline = new ComputePipeline(this.gpuContext, {
       label: 'Normal Estimation',
-      shaderCode: normalShader,
+      shaderCode: planeShaders.normalEstimation,
     });
 
     this.ransacPipeline = new ComputePipeline(this.gpuContext, {
       label: 'RANSAC Plane Fitting',
-      shaderCode: ransacShader,
+      shaderCode: planeShaders.planeFitting,
     });
 
     this.refinementPipeline = new ComputePipeline(this.gpuContext, {
       label: 'Plane Refinement',
-      shaderCode: refinementShader,
+      shaderCode: planeShaders.planeRefinement,
     });
 
     // Create textures
@@ -261,6 +257,11 @@ export class PlaneDetector {
     const detectedPlanes = this.extractBestPlanes(planesData);
     this.planesReadbackBuffer!.unmap();
 
+    // Extract boundaries for detected planes
+    for (const plane of detectedPlanes) {
+      plane.boundary = this.extractBoundary(plane, points);
+    }
+
     // Update tracking
     this.updateTracking(detectedPlanes);
 
@@ -345,6 +346,158 @@ export class PlaneDetector {
     }
 
     return planes;
+  }
+
+  /**
+   * Extract plane boundary from inlier points
+   */
+  private extractBoundary(
+    plane: DetectedPlane,
+    points: Float32Array
+  ): Vector3[] {
+    // Project inliers onto plane and extract 2D convex hull
+    const inliers: Vector3[] = [];
+    const numPoints = points.length / 4;
+
+    // Find inlier points
+    for (let i = 0; i < numPoints; i++) {
+      const point = new Vector3(
+        points[i * 4],
+        points[i * 4 + 1],
+        points[i * 4 + 2]
+      );
+
+      const distance = Math.abs(
+        plane.normal.dot(point) + plane.distance
+      );
+
+      if (distance < this.config.distanceThreshold) {
+        inliers.push(point);
+      }
+    }
+
+    if (inliers.length < 4) {
+      return [];
+    }
+
+    // Create 2D coordinate system on plane
+    const normal = plane.normal;
+    let u: Vector3;
+
+    // Choose u perpendicular to normal
+    if (Math.abs(normal.x) < 0.9) {
+      u = new Vector3(1, 0, 0).cross(normal).normalize();
+    } else {
+      u = new Vector3(0, 1, 0).cross(normal).normalize();
+    }
+    const v = normal.cross(u);
+
+    // Project points to 2D
+    const points2D: Array<{ x: number; y: number; point3D: Vector3 }> = [];
+    for (const point of inliers) {
+      const relative = point.subtract(plane.centroid);
+      points2D.push({
+        x: relative.dot(u),
+        y: relative.dot(v),
+        point3D: point,
+      });
+    }
+
+    // Compute 2D convex hull using Graham scan
+    const hull2D = this.convexHull2D(points2D);
+
+    // Convert back to 3D
+    return hull2D.map((p) => p.point3D);
+  }
+
+  /**
+   * Compute 2D convex hull using Graham scan
+   */
+  private convexHull2D(
+    points: Array<{ x: number; y: number; point3D: Vector3 }>
+  ): Array<{ x: number; y: number; point3D: Vector3 }> {
+    if (points.length < 3) {
+      return points;
+    }
+
+    // Find bottom-most point (lowest y, then lowest x)
+    let start = points[0];
+    for (const p of points) {
+      if (p.y < start.y || (p.y === start.y && p.x < start.x)) {
+        start = p;
+      }
+    }
+
+    // Sort by polar angle
+    const sorted = points
+      .filter((p) => p !== start)
+      .sort((a, b) => {
+        const angleA = Math.atan2(a.y - start.y, a.x - start.x);
+        const angleB = Math.atan2(b.y - start.y, b.x - start.x);
+        return angleA - angleB;
+      });
+
+    // Graham scan
+    const hull = [start, sorted[0]];
+
+    for (let i = 1; i < sorted.length; i++) {
+      while (hull.length >= 2) {
+        const p1 = hull[hull.length - 2];
+        const p2 = hull[hull.length - 1];
+        const p3 = sorted[i];
+
+        // Cross product to check turn direction
+        const cross =
+          (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
+
+        if (cross > 0) {
+          break; // Left turn
+        }
+        hull.pop(); // Right turn, remove p2
+      }
+      hull.push(sorted[i]);
+    }
+
+    // Simplify hull (Douglas-Peucker-like decimation)
+    return this.simplifyPolygon(hull, 0.1); // 10cm tolerance
+  }
+
+  /**
+   * Simplify polygon by removing points close to edges
+   */
+  private simplifyPolygon(
+    polygon: Array<{ x: number; y: number; point3D: Vector3 }>,
+    tolerance: number
+  ): Array<{ x: number; y: number; point3D: Vector3 }> {
+    if (polygon.length <= 4) {
+      return polygon;
+    }
+
+    const simplified = [polygon[0]];
+
+    for (let i = 1; i < polygon.length - 1; i++) {
+      const prev = simplified[simplified.length - 1];
+      const curr = polygon[i];
+      const next = polygon[i + 1];
+
+      // Check if current point is far from line prev->next
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+
+      if (len > 0.001) {
+        const dist =
+          Math.abs((dy * curr.x - dx * curr.y + next.x * prev.y - next.y * prev.x)) /
+          len;
+
+        if (dist > tolerance) {
+          simplified.push(curr);
+        }
+      }
+    }
+
+    simplified.push(polygon[polygon.length - 1]);
+    return simplified;
   }
 
   /**
