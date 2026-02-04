@@ -5,6 +5,7 @@
 
 import type { GPUContextManager } from '../gpu/gpu-context';
 import { ComputePipeline, calculateWorkgroupCount } from '../gpu/compute-pipeline';
+import { getORBPattern, patternToArray } from './orb-pattern';
 
 export interface Keypoint {
   x: number;
@@ -34,6 +35,7 @@ export class FeatureDetector {
 
   // Pipelines
   private fastPipeline: ComputePipeline | null = null;
+  private orientationPipeline: ComputePipeline | null = null;
   private orbPipeline: ComputePipeline | null = null;
   private matchingPipeline: ComputePipeline | null = null;
 
@@ -43,6 +45,9 @@ export class FeatureDetector {
   // Buffers
   private fastParamsBuffer: GPUBuffer | null = null;
   private keypointsBuffer: GPUBuffer | null = null;
+  private orientedKeypointsBuffer: GPUBuffer | null = null;
+  private orientationParamsBuffer: GPUBuffer | null = null;
+  private patternBuffer: GPUBuffer | null = null;
   private descriptorsBuffer: GPUBuffer | null = null;
   private orbParamsBuffer: GPUBuffer | null = null;
   private matchingParamsBuffer: GPUBuffer | null = null;

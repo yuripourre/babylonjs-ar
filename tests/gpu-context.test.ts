@@ -2,11 +2,20 @@ import { test, expect, describe } from 'bun:test';
 import { GPUContextManager } from '../src/core/gpu/gpu-context';
 
 describe('GPUContextManager', () => {
-  test('should check WebGPU availability', () => {
-    // This will fail in non-browser environments
-    expect(typeof navigator).toBe('undefined');
+  test('should have GPU context manager class', () => {
+    expect(GPUContextManager).toBeDefined();
   });
 
-  // Note: Full GPU tests require a browser environment
-  // These are placeholder tests for CI
+  test('creates instance', () => {
+    const manager = new GPUContextManager();
+    expect(manager).toBeDefined();
+  });
+
+  test('isReady returns false before initialization', () => {
+    const manager = new GPUContextManager();
+    expect(manager.isReady()).toBe(false);
+  });
+
+  // Note: Full GPU tests require a browser environment with WebGPU
+  // Hardware-specific tests should be run in browser
 });
