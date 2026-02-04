@@ -1,8 +1,36 @@
-# Babylon.js AR Examples
+# BabylonJS AR Examples
 
-Complete, ready-to-use examples for integrating AR with Babylon.js.
+Complete examples demonstrating all features of babylonjs-ar with both Babylon.js and Three.js.
 
 ## 🎯 Examples
+
+### ⭐ Recommended: Complete Hybrid Demos
+
+#### `babylon-hybrid-complete.html` (NEW)
+**Complete AR showcase with all features enabled**
+- ✅ Marker tracking (ArUco 4x4, multiple simultaneous)
+- ✅ Plane detection (horizontal & vertical surfaces)
+- ✅ Depth estimation integration (stereo/ML-based)
+- ✅ Feature tracking pipeline
+- ✅ Real-time statistics & FPS
+- ✅ Toggle controls for each feature
+- ✅ Multiple 3D object types with animations
+- ✅ Interactive UI with status indicators
+
+**Best for:** Understanding full capabilities, testing all features
+
+#### `three-hybrid-complete.html` (NEW)
+**Three.js version of complete AR demo**
+- Same features as Babylon.js version
+- Three.js specific optimizations
+- Phong lighting model
+- Custom Three.js animations
+
+**Best for:** Three.js developers, cross-framework comparison
+
+---
+
+### Babylon.js Examples
 
 ### 1. ArUco Marker Example (`babylon-aruco-marker.html`)
 
@@ -27,10 +55,15 @@ python -m http.server 8000
 
 **Steps:**
 1. Allow camera access when prompted
-2. Print a marker from https://chev.me/arucogen/ (4x4 Dictionary, IDs 0-9)
+2. Print a marker from https://chev.me/arucogen/ (4x4 Dictionary, IDs 0-49)
 3. Or click "Download Test Marker" button
 4. Point camera at the marker
 5. Watch the 3D cube appear!
+
+**Supported Markers:**
+- **4x4 Dictionary**: 50 markers (IDs 0-49)
+- **5x5 Dictionary**: 100 markers (IDs 0-99)
+- **6x6 Dictionary**: 50 markers (IDs 0-49)
 
 **Tip:** Keep marker flat and well-lit for best tracking.
 
@@ -65,6 +98,39 @@ python -m http.server 8000
 5. Rotate the view with your mouse!
 
 **Tip:** Photos with good lighting and clear textures work best.
+
+---
+
+### Three.js Examples
+
+### 3. Three.js ArUco Marker (`three-aruco-marker.html`)
+**Marker tracking with Three.js**
+- ArUco marker detection with Three.js renderer
+- Object3D anchor system
+- VideoTexture background integration
+- Animated cubes on markers
+
+### 4. Three.js Markerless Image (`three-markerless-image.html`)
+**Plane detection with Three.js**
+- Image upload and plane detection
+- Three.js specific geometry
+- OrbitControls for interaction
+- Multiple mesh types
+
+---
+
+## 📊 Feature Matrix
+
+| Example | Markers | Planes | Depth | Features | Framework |
+|---------|---------|--------|-------|----------|-----------|
+| babylon-hybrid-complete | ✅ | ✅ | 🔄 | 🔄 | Babylon.js |
+| three-hybrid-complete | ✅ | ✅ | 🔄 | 🔄 | Three.js |
+| babylon-aruco-marker | ✅ | ❌ | ❌ | ❌ | Babylon.js |
+| babylon-markerless-image | ❌ | ✅ | ❌ | ❌ | Babylon.js |
+| three-aruco-marker | ✅ | ❌ | ❌ | ❌ | Three.js |
+| three-markerless-image | ❌ | ✅ | ❌ | ❌ | Three.js |
+
+Legend: ✅ Implemented | 🔄 Requires Setup | ❌ Not included
 
 ---
 
@@ -249,7 +315,8 @@ scene.registerBeforeRender(() => {
 - Print marker at least 5cm × 5cm
 - Ensure good lighting
 - Keep marker flat and unobstructed
-- Use 4x4 dictionary, IDs 0-9
+- Use correct dictionary size (4x4, 5x5, or 6x6)
+- Verify marker ID is within supported range
 
 ### Image upload not working
 - Use JPG or PNG format

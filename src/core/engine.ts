@@ -11,6 +11,7 @@ import { Tracker, type TrackerConfig, type TrackedMarker } from './tracking/trac
 import { PlaneDetector, type PlaneConfig, type DetectedPlane } from './detection/plane-detector';
 import { PointCloudGenerator } from './detection/point-cloud';
 import { PoseEstimator } from './tracking/pose-estimator';
+import { DepthManager, type DepthConfig, type DepthFrame } from './depth/depth-manager';
 
 export interface AREngineConfig {
   camera?: CameraConfig;
@@ -19,8 +20,10 @@ export interface AREngineConfig {
   };
   tracker?: TrackerConfig;
   planeDetector?: PlaneConfig;
+  depthEstimation?: DepthConfig;
   enableMarkerTracking?: boolean;
   enablePlaneDetection?: boolean;
+  enableDepthEstimation?: boolean;
 }
 
 export interface ARFrame {
@@ -31,6 +34,7 @@ export interface ARFrame {
   height: number;
   markers?: TrackedMarker[];
   planes?: DetectedPlane[];
+  depth?: DepthFrame;
 }
 
 export class AREngine {
@@ -38,11 +42,13 @@ export class AREngine {
   private cameraManager: CameraManager;
   private tracker: Tracker | null = null;
   private planeDetector: PlaneDetector | null = null;
+  private depthManager: DepthManager | null = null;
   private pointCloudGenerator: PointCloudGenerator | null = null;
   private isInitialized = false;
   private isRunning = false;
   private enableMarkerTracking = false;
   private enablePlaneDetection = false;
+  private enableDepthEstimation = false;
 
   // GPU resources
   private grayscalePipeline: ComputePipeline | null = null;
@@ -62,6 +68,10 @@ export class AREngine {
   // Plane detection state
   private latestPlanes: DetectedPlane[] = [];
   private isPlaneDetectionInProgress = false;
+
+  // Depth estimation state
+  private latestDepth: DepthFrame | null = null;
+  private isDepthEstimationInProgress = false;
 
   // Frame callback
   private onFrameCallback: ((frame: ARFrame) => void) | null = null;
@@ -108,6 +118,24 @@ export class AREngine {
       console.log('[AREngine] Marker tracking enabled');
     }
 
+    // Initialize depth estimation if enabled
+    this.enableDepthEstimation = config.enableDepthEstimation ?? false;
+    const intrinsics = PoseEstimator.estimateIntrinsics(
+      resolution.width,
+      resolution.height,
+      60 // Assume 60° FOV
+    );
+
+    if (this.enableDepthEstimation) {
+      this.depthManager = new DepthManager(
+        this.gpuContext,
+        intrinsics,
+        config.depthEstimation ?? { width: resolution.width, height: resolution.height }
+      );
+      await this.depthManager.initialize();
+      console.log('[AREngine] Depth estimation enabled');
+    }
+
     // Initialize plane detector if enabled
     this.enablePlaneDetection = config.enablePlaneDetection ?? false;
     if (this.enablePlaneDetection) {
@@ -115,11 +143,6 @@ export class AREngine {
       await this.planeDetector.initialize(resolution.width, resolution.height);
 
       // Create point cloud generator
-      const intrinsics = PoseEstimator.estimateIntrinsics(
-        resolution.width,
-        resolution.height,
-        60 // Assume 60° FOV
-      );
       this.pointCloudGenerator = new PointCloudGenerator(intrinsics);
 
       console.log('[AREngine] Plane detection enabled');
@@ -252,20 +275,38 @@ export class AREngine {
         });
       }
 
-      // Detect planes asynchronously (non-blocking)
-      // Note: Requires depth data - will be fully functional in Phase 5
-      if (this.enablePlaneDetection && this.planeDetector && this.pointCloudGenerator && !this.isPlaneDetectionInProgress) {
-        // TODO: In Phase 5, we'll have actual depth estimation
-        // For now, plane detection is initialized but needs depth data to function
-        // Placeholder: would generate point cloud from depth and detect planes
-        // this.isPlaneDetectionInProgress = true;
-        // const depthData = await this.estimateDepth(grayscaleTexture);
-        // const points = this.pointCloudGenerator.generateFromDepth(depthData, width, height);
-        // const normals = this.pointCloudGenerator.computeNormals(points);
-        // this.planeDetector.detectPlanes(points, normals).then(planes => {
-        //   this.latestPlanes = planes;
-        //   this.isPlaneDetectionInProgress = false;
+      // Depth estimation asynchronously (non-blocking)
+      if (this.enableDepthEstimation && this.depthManager && !this.isDepthEstimationInProgress) {
+        this.isDepthEstimationInProgress = true;
+
+        // Note: Depth estimation from stereo requires two camera views
+        // For monocular depth, we would use ML-based estimation (future)
+        // For now, depth estimation is available but requires stereo setup
+        // this.depthManager.computeMonocularDepth(grayscaleData).then(depthFrame => {
+        //   this.latestDepth = depthFrame;
+        //   this.isDepthEstimationInProgress = false;
+        // }).catch(error => {
+        //   console.error('[AREngine] Depth estimation error:', error);
+        //   this.isDepthEstimationInProgress = false;
         // });
+        this.isDepthEstimationInProgress = false; // Disable until stereo/ML integration
+      }
+
+      // Detect planes asynchronously (non-blocking)
+      if (this.enablePlaneDetection && this.planeDetector && this.pointCloudGenerator && this.latestDepth && !this.isPlaneDetectionInProgress) {
+        this.isPlaneDetectionInProgress = true;
+
+        // Use depth data to generate point cloud and detect planes
+        const depthFrame = this.latestDepth;
+
+        // Plane detection uses point cloud and normals from depth
+        this.planeDetector.detectPlanes(depthFrame.pointCloud, depthFrame.normals).then(planes => {
+          this.latestPlanes = planes;
+          this.isPlaneDetectionInProgress = false;
+        }).catch(error => {
+          console.error('[AREngine] Plane detection error:', error);
+          this.isPlaneDetectionInProgress = false;
+        });
       }
 
       // Create AR frame data (use latest data from previous frame)
@@ -277,6 +318,7 @@ export class AREngine {
         height: cameraFrame.height,
         markers: this.enableMarkerTracking ? this.latestMarkers : undefined,
         planes: this.enablePlaneDetection ? this.latestPlanes : undefined,
+        depth: this.enableDepthEstimation ? this.latestDepth ?? undefined : undefined,
       };
 
       // Invoke callback
@@ -326,6 +368,13 @@ export class AREngine {
   }
 
   /**
+   * Get backend type (webgpu or webgl2)
+   */
+  getBackendType(): 'webgpu' | 'webgl2' {
+    return this.gpuContext.getBackendType();
+  }
+
+  /**
    * Get camera manager
    */
   getCameraManager(): CameraManager {
@@ -344,6 +393,13 @@ export class AREngine {
    */
   getPlaneDetector(): PlaneDetector | null {
     return this.planeDetector;
+  }
+
+  /**
+   * Get depth manager
+   */
+  getDepthManager(): DepthManager | null {
+    return this.depthManager;
   }
 
   /**
@@ -372,6 +428,11 @@ export class AREngine {
     if (this.planeDetector) {
       this.planeDetector.destroy();
       this.planeDetector = null;
+    }
+
+    if (this.depthManager) {
+      this.depthManager.destroy();
+      this.depthManager = null;
     }
 
     this.cameraManager.destroy();

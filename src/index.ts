@@ -35,8 +35,13 @@ export {
   PoseEstimator,
   type CameraIntrinsics,
   type Pose,
+  type PoseEstimatorConfig,
 } from './core/tracking/pose-estimator';
 export { KalmanFilter } from './core/tracking/kalman-filter';
+export { EPnP, type EPnPResult } from './core/tracking/epnp';
+export { Kabsch, type KabschResult } from './core/tracking/kabsch';
+export { RANSACPose, estimatePoseRANSAC, type RANSACConfig, type RANSACResult } from './core/tracking/ransac-pose';
+export { SubPixelRefine, refineCorners, type SubPixelConfig } from './core/tracking/subpixel-refine';
 
 // Math utilities
 export { Matrix4 } from './core/math/matrix';
@@ -47,6 +52,7 @@ export { Homography } from './core/math/homography';
 // Detection utilities
 export { ContourProcessor, type Point, type Contour, type Quad } from './core/detection/contour-processor';
 export { ArucoDecoder, type DictionarySize, type MarkerBits, type DecodedMarker } from './core/detection/aruco-decoder';
+export { getArucoDictionary, getDictionarySize, validateMarkerPattern, ARUCO_4X4_50, ARUCO_5X5_100, ARUCO_6X6_250 } from './core/detection/aruco-dictionaries';
 export {
   FeatureDetector,
   type FeatureDetectorConfig,
@@ -62,6 +68,13 @@ export {
   PointCloudGenerator,
   type Point3D,
 } from './core/detection/point-cloud';
+
+// Depth estimation
+export {
+  DepthManager,
+  type DepthConfig,
+  type DepthFrame,
+} from './core/depth/depth-manager';
 
 // Estimation
 export {
@@ -118,5 +131,18 @@ export {
   withErrorHandling,
 } from './utils/ar-errors';
 
+// Framework Adapters
+export {
+  BabylonAR,
+  createBabylonAR,
+  type BabylonARConfig,
+} from './adapters/babylon/babylon-ar';
+export {
+  ThreeAR,
+  createThreeAR,
+  type ThreeARConfig,
+  type ThreeTypes,
+} from './adapters/three/three-ar';
+
 // Version
-export const VERSION = '0.6.0'; // Developer Experience improvements
+export const VERSION = '0.11.0'; // TypeScript fixes + WebGL2 fallback architecture

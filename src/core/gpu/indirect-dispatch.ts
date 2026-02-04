@@ -157,7 +157,7 @@ export class IndirectDispatch {
     device.queue.writeBuffer(paramsBuffer, 0, params);
 
     // Create bind group
-    const bindGroupLayout = this.computeDispatchPipeline.getBindGroupLayout(0);
+    const bindGroupLayout = this.computeDispatchPipeline.getBindGroupLayout(0) as GPUBindGroupLayout;
     const bindGroup = device.createBindGroup({
       layout: bindGroupLayout,
       entries: [

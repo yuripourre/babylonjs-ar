@@ -10,13 +10,16 @@ import {
   ArcRotateCamera,
   Vector3,
   Mesh,
+  MeshBuilder,
   TransformNode,
   Matrix,
   Quaternion,
   HemisphericLight,
   Color3,
   Texture,
-  DynamicTexture,
+  VideoTexture,
+  StandardMaterial,
+  Color4,
 } from '@babylonjs/core';
 import { AREngine, type ARFrame } from '../../core/engine';
 import { ARBuilder, type ARPreset } from '../../core/ar-builder';
@@ -51,11 +54,13 @@ export class BabylonAR {
   // Anchors
   private markerAnchors: Map<number, TransformNode> = new Map();
   private planeAnchors: Map<number, TransformNode> = new Map();
+  private planeMeshes: Map<number, Mesh> = new Map();
   private anchorParent: TransformNode;
 
   // Background
   private backgroundPlane: Mesh | null = null;
-  private backgroundTexture: DynamicTexture | null = null;
+  private backgroundTexture: VideoTexture | null = null;
+  private backgroundMaterial: StandardMaterial | null = null;
 
   // Config
   private config: BabylonARConfig;
@@ -136,26 +141,54 @@ export class BabylonAR {
    * Setup background texture for camera feed
    */
   private setupBackgroundTexture(): void {
-    // Get camera resolution
-    const resolution = this.arEngine.getCameraManager().getResolution();
-    if (!resolution) return;
+    // Get video element from camera manager
+    const videoElement = this.arEngine.getCameraManager().getVideoElement();
+    if (!videoElement) return;
 
-    // Create dynamic texture for background
-    this.backgroundTexture = new DynamicTexture(
+    // Create video texture from camera feed
+    this.backgroundTexture = new VideoTexture(
       'backgroundTexture',
-      { width: resolution.width, height: resolution.height },
+      videoElement,
       this.scene,
-      false
+      false, // Don't generate mip maps
+      false, // Not invertY (we'll flip the plane instead)
+      Texture.TRILINEAR_SAMPLINGMODE,
+      {
+        autoUpdateTexture: true, // Auto-update each frame
+        autoPlay: true,
+      }
     );
+
+    // Create material for background
+    this.backgroundMaterial = new StandardMaterial('backgroundMaterial', this.scene);
+    this.backgroundMaterial.diffuseTexture = this.backgroundTexture;
+    this.backgroundMaterial.emissiveTexture = this.backgroundTexture; // Make it self-illuminated
+    this.backgroundMaterial.disableLighting = true; // Don't apply scene lighting
+    this.backgroundMaterial.backFaceCulling = false; // Render both sides
 
     // Create background plane
     if (!this.backgroundPlane) {
-      this.backgroundPlane = Mesh.CreatePlane('background', 100, this.scene);
-      this.backgroundPlane.position.z = 50;
-      this.backgroundPlane.scaling.y = -1; // Flip vertically
+      // Calculate aspect ratio
+      const resolution = this.arEngine.getCameraManager().getResolution();
+      if (!resolution) return;
 
-      // TODO: Apply texture to background plane
-      // this.backgroundPlane.material = backgroundMaterial;
+      const aspectRatio = resolution.width / resolution.height;
+      const planeHeight = 100;
+      const planeWidth = planeHeight * aspectRatio;
+
+      this.backgroundPlane = MeshBuilder.CreatePlane(
+        'background',
+        { width: planeWidth, height: planeHeight },
+        this.scene
+      );
+
+      this.backgroundPlane.position.z = 50; // Far back in scene
+      this.backgroundPlane.scaling.y = -1; // Flip vertically to match camera
+      this.backgroundPlane.material = this.backgroundMaterial;
+
+      // Make sure background renders behind everything else
+      this.backgroundPlane.renderingGroupId = 0;
+      this.backgroundPlane.isPickable = false; // Don't interfere with raycasting
     }
   }
 
@@ -163,11 +196,9 @@ export class BabylonAR {
    * Handle AR frame
    */
   private onARFrame(frame: ARFrame): void {
-    // Update background texture
-    if (this.backgroundTexture && frame.cameraTexture) {
-      // TODO: Copy GPU texture to dynamic texture
-      // This would require WebGPU-Babylon.js texture sharing
-    }
+    // Background texture is automatically updated from video element
+    // via VideoTexture's autoUpdateTexture setting
+    // No manual copying needed!
 
     // Update marker anchors
     if (frame.markers && this.config.enableMarkers) {
@@ -226,8 +257,12 @@ export class BabylonAR {
    * Update plane anchors
    */
   private updatePlaneAnchors(planes: DetectedPlane[]): void {
+    const currentPlaneIds = new Set<number>();
+
     for (const plane of planes) {
       const id = plane.id || 0;
+      currentPlaneIds.add(id);
+
       let anchor = this.planeAnchors.get(id);
 
       if (!anchor) {
@@ -235,6 +270,9 @@ export class BabylonAR {
         anchor = new TransformNode(`Plane_${id}`, this.scene);
         anchor.parent = this.anchorParent;
         this.planeAnchors.set(id, anchor);
+
+        // Create visual plane mesh
+        this.createPlaneMesh(id, plane);
 
         // Notify callback
         if (this.config.onPlaneDetected) {
@@ -244,7 +282,68 @@ export class BabylonAR {
 
       // Update anchor transform from plane
       this.updateAnchorFromPlane(anchor, plane);
+
+      // Update plane mesh if exists
+      const planeMesh = this.planeMeshes.get(id);
+      if (planeMesh) {
+        this.updatePlaneMesh(planeMesh, plane);
+      }
     }
+
+    // Remove lost planes
+    for (const [id, anchor] of this.planeAnchors) {
+      if (!currentPlaneIds.has(id)) {
+        anchor.dispose();
+        this.planeAnchors.delete(id);
+
+        const mesh = this.planeMeshes.get(id);
+        if (mesh) {
+          mesh.dispose();
+          this.planeMeshes.delete(id);
+        }
+      }
+    }
+  }
+
+  /**
+   * Create visual mesh for detected plane
+   */
+  private createPlaneMesh(id: number, plane: DetectedPlane): void {
+    // Calculate plane size from area
+    const planeSize = Math.sqrt(plane.area);
+
+    // Create plane mesh
+    const planeMesh = MeshBuilder.CreatePlane(
+      `PlaneMesh_${id}`,
+      { width: planeSize, height: planeSize },
+      this.scene
+    );
+
+    // Create semi-transparent material
+    const material = new StandardMaterial(`PlaneMat_${id}`, this.scene);
+    material.diffuseColor = new Color3(0, 0.7, 1); // Cyan
+    material.alpha = 0.3; // Semi-transparent
+    material.backFaceCulling = false; // Render both sides
+
+    planeMesh.material = material;
+
+    // Parent to anchor
+    const anchor = this.planeAnchors.get(id);
+    if (anchor) {
+      planeMesh.parent = anchor;
+    }
+
+    this.planeMeshes.set(id, planeMesh);
+  }
+
+  /**
+   * Update plane mesh geometry
+   */
+  private updatePlaneMesh(mesh: Mesh, plane: DetectedPlane): void {
+    // Update mesh scale based on plane area
+    const planeSize = Math.sqrt(plane.area);
+    mesh.scaling.x = planeSize;
+    mesh.scaling.y = planeSize;
   }
 
   /**
@@ -348,9 +447,74 @@ export class BabylonAR {
    */
   dispose(): void {
     this.stop();
+
+    // Clean up background
+    if (this.backgroundPlane) {
+      this.backgroundPlane.dispose();
+      this.backgroundPlane = null;
+    }
+    if (this.backgroundTexture) {
+      this.backgroundTexture.dispose();
+      this.backgroundTexture = null;
+    }
+    if (this.backgroundMaterial) {
+      this.backgroundMaterial.dispose();
+      this.backgroundMaterial = null;
+    }
+
+    // Clean up plane meshes
+    for (const mesh of this.planeMeshes.values()) {
+      mesh.dispose();
+    }
+    this.planeMeshes.clear();
+
+    // Clean up anchors
+    for (const anchor of this.markerAnchors.values()) {
+      anchor.dispose();
+    }
+    this.markerAnchors.clear();
+
+    for (const anchor of this.planeAnchors.values()) {
+      anchor.dispose();
+    }
+    this.planeAnchors.clear();
+
+    // Dispose AR engine and scene
     this.arEngine.destroy();
     this.scene.dispose();
     this.engine.dispose();
+  }
+
+  /**
+   * Show/hide camera background
+   */
+  setBackgroundVisible(visible: boolean): void {
+    if (this.backgroundPlane) {
+      this.backgroundPlane.setEnabled(visible);
+    }
+  }
+
+  /**
+   * Set background opacity
+   */
+  setBackgroundOpacity(opacity: number): void {
+    if (this.backgroundMaterial) {
+      this.backgroundMaterial.alpha = Math.max(0, Math.min(1, opacity));
+    }
+  }
+
+  /**
+   * Get all detected plane anchors
+   */
+  getAllPlaneAnchors(): TransformNode[] {
+    return Array.from(this.planeAnchors.values());
+  }
+
+  /**
+   * Get all detected marker anchors
+   */
+  getAllMarkerAnchors(): TransformNode[] {
+    return Array.from(this.markerAnchors.values());
   }
 
   /**

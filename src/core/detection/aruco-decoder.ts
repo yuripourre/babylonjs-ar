@@ -1,7 +1,14 @@
 /**
  * ArUco Marker Decoder
  * Decodes ArUco marker IDs from extracted marker images
+ *
+ * Supports complete ArUco dictionaries:
+ * - 4x4: 50 markers
+ * - 5x5: 100 markers
+ * - 6x6: 250 markers
  */
+
+import { getArucoDictionary, getDictionarySize, validateMarkerPattern } from './aruco-dictionaries';
 
 export type DictionarySize = 4 | 5 | 6;
 
@@ -141,74 +148,34 @@ export class ArucoDecoder {
   }
 
   /**
-   * Load ArUco dictionary
+   * Load ArUco dictionary from complete dictionaries module
    */
   private loadDictionary(size: DictionarySize): Map<number, number[]> {
     const dict = new Map<number, number[]>();
-
-    switch (size) {
-      case 4:
-        return this.getAruco4x4Dictionary();
-      case 5:
-        return this.getAruco5x5Dictionary();
-      case 6:
-        return this.getAruco6x6Dictionary();
-      default:
-        return this.getAruco4x4Dictionary();
-    }
-  }
-
-  /**
-   * ArUco 4x4 dictionary (50 markers)
-   * Subset of standard ArUco markers with good inter-marker distance
-   */
-  private getAruco4x4Dictionary(): Map<number, number[]> {
-    const dict = new Map<number, number[]>();
-
-    // ArUco 4x4_50 dictionary (simplified subset)
-    // Format: outer 16 bits (row-major order)
-    const patterns = [
-      [0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0], // ID 0
-      [0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0], // ID 1
-      [0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0], // ID 2
-      [1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0], // ID 3
-      [1, 0, 1, 1, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 0], // ID 4
-      [0, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0], // ID 5
-      [1, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0], // ID 6
-      [1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0], // ID 7
-      [0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0, 0], // ID 8
-      [1, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0], // ID 9
-    ];
+    const patterns = getArucoDictionary(size);
 
     patterns.forEach((pattern, id) => {
-      dict.set(id, pattern);
+      // Validate pattern before adding
+      if (validateMarkerPattern(pattern, size)) {
+        dict.set(id, pattern);
+      }
     });
 
     return dict;
   }
 
   /**
-   * ArUco 5x5 dictionary (subset)
+   * Get number of markers in current dictionary
    */
-  private getAruco5x5Dictionary(): Map<number, number[]> {
-    const dict = new Map<number, number[]>();
-
-    // ArUco 5x5 has 1000 markers, include just a subset for now
-    // Would need to load full dictionary for production
-
-    return dict;
+  getDictionarySize(): number {
+    return this.dictionary.size;
   }
 
   /**
-   * ArUco 6x6 dictionary (subset)
+   * Check if marker ID exists in dictionary
    */
-  private getAruco6x6Dictionary(): Map<number, number[]> {
-    const dict = new Map<number, number[]>();
-
-    // ArUco 6x6 has 1000 markers, include just a subset for now
-    // Would need to load full dictionary for production
-
-    return dict;
+  isValidMarkerId(id: number): boolean {
+    return this.dictionary.has(id);
   }
 
   /**

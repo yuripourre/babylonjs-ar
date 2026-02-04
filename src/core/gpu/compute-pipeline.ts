@@ -46,7 +46,7 @@ export class ComputePipeline {
     });
 
     // Get bind group layout
-    this.bindGroupLayout = this.pipeline.getBindGroupLayout(0);
+    this.bindGroupLayout = this.pipeline.getBindGroupLayout(0) as GPUBindGroupLayout;
   }
 
   /**

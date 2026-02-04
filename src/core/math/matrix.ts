@@ -3,6 +3,8 @@
  * 4x4 matrix operations for 3D transformations
  */
 
+import { Vector3 } from './vector';
+
 export class Matrix4 {
   // Column-major order (OpenGL/WebGPU convention)
   data: Float32Array;
@@ -163,6 +165,29 @@ export class Matrix4 {
    */
   getTranslation(): [number, number, number] {
     return [this.data[12], this.data[13], this.data[14]];
+  }
+
+  /**
+   * Transform a 3D point by this matrix
+   */
+  transformPoint(point: Vector3): Vector3 {
+    const m = this.data;
+    const x = point.x;
+    const y = point.y;
+    const z = point.z;
+
+    // Column-major: [m0 m4 m8  m12]
+    //                [m1 m5 m9  m13]
+    //                [m2 m6 m10 m14]
+    //                [m3 m7 m11 m15]
+
+    const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+
+    return new Vector3(
+      (m[0] * x + m[4] * y + m[8] * z + m[12]) / w,
+      (m[1] * x + m[5] * y + m[9] * z + m[13]) / w,
+      (m[2] * x + m[6] * y + m[10] * z + m[14]) / w
+    );
   }
 
   /**

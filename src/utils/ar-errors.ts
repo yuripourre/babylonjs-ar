@@ -159,7 +159,7 @@ export async function diagnoseEnvironment(): Promise<{
 
   // Get GPU info (if WebGPU available)
   let gpu: string | null = null;
-  if (webgpu) {
+  if (webgpu && navigator.gpu) {
     try {
       const adapter = await navigator.gpu.requestAdapter();
       if (adapter) {

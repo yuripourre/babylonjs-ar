@@ -6,6 +6,7 @@
 import type { GPUContextManager } from '../gpu/gpu-context';
 import { ComputePipeline, calculateWorkgroupCount } from '../gpu/compute-pipeline';
 import { getORBPattern, patternToArray } from './orb-pattern';
+import { featureShaders } from '../../shaders/feature-shaders';
 
 export interface Keypoint {
   x: number;
@@ -78,15 +79,25 @@ export class FeatureDetector {
   async initialize(width: number, height: number): Promise<void> {
     const device = this.gpuContext.getDevice();
 
-    // Load shaders
-    const fastShader = await this.loadShader('fast-corners.wgsl');
-    const orbShader = await this.loadShader('orb-descriptor.wgsl');
-    const matchingShader = await this.loadShader('feature-matching.wgsl');
-
-    // Create pipelines
+    // Create pipelines with actual WGSL shaders
     this.fastPipeline = new ComputePipeline(this.gpuContext, {
       label: 'FAST Corners',
-      shaderCode: fastShader,
+      shaderCode: featureShaders.fastCorners,
+    });
+
+    this.orientationPipeline = new ComputePipeline(this.gpuContext, {
+      label: 'Orientation',
+      shaderCode: featureShaders.orientation,
+    });
+
+    this.orbPipeline = new ComputePipeline(this.gpuContext, {
+      label: 'ORB Descriptor',
+      shaderCode: featureShaders.orbDescriptor,
+    });
+
+    this.matchingPipeline = new ComputePipeline(this.gpuContext, {
+      label: 'Feature Matching',
+      shaderCode: featureShaders.featureMatching,
     });
 
     // Create textures
@@ -96,6 +107,16 @@ export class FeatureDetector {
       format: 'r32float',
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
     });
+
+    // Create ORB pattern buffer
+    const orbPattern = getORBPattern();
+    const patternArray = patternToArray(orbPattern);
+    this.patternBuffer = device.createBuffer({
+      label: 'ORB Pattern',
+      size: patternArray.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(this.patternBuffer, 0, patternArray.buffer);
 
     // Create buffers
     this.fastParamsBuffer = device.createBuffer({
@@ -156,14 +177,6 @@ export class FeatureDetector {
     console.log('[FeatureDetector] Initialized');
   }
 
-  /**
-   * Load shader code
-   */
-  private async loadShader(filename: string): Promise<string> {
-    // In production, load from actual files
-    // For now, return placeholder
-    return `@compute @workgroup_size(16, 16) fn main() {}`;
-  }
 
   /**
    * Update FAST parameters
@@ -311,9 +324,61 @@ export class FeatureDetector {
     grayscaleTexture: GPUTexture,
     keypoints: Keypoint[]
   ): Promise<Uint32Array> {
-    // Placeholder - would compute orientation and ORB descriptors
-    // For now, return zeros
-    const descriptors = new Uint32Array(keypoints.length * 8);
+    if (!this.orbPipeline || keypoints.length === 0) {
+      const descriptors = new Uint32Array(0);
+      this.currentDescriptors = descriptors;
+      return descriptors;
+    }
+
+    const device = this.gpuContext.getDevice();
+
+    // Upload keypoints to GPU
+    const keypointsData = new Float32Array(keypoints.length * 4);
+    for (let i = 0; i < keypoints.length; i++) {
+      keypointsData[i * 4 + 0] = keypoints[i].x;
+      keypointsData[i * 4 + 1] = keypoints[i].y;
+      keypointsData[i * 4 + 2] = keypoints[i].angle;
+      keypointsData[i * 4 + 3] = keypoints[i].response;
+    }
+    device.queue.writeBuffer(this.keypointsBuffer!, 0, keypointsData.buffer);
+
+    // Update parameters
+    this.updateORBParams();
+
+    // Create bind group for ORB
+    const orbBindGroup = this.orbPipeline.createBindGroup([
+      { binding: 0, resource: grayscaleTexture.createView() },
+      { binding: 1, resource: { buffer: this.keypointsBuffer! } },
+      { binding: 2, resource: { buffer: this.descriptorsBuffer! } },
+      { binding: 3, resource: { buffer: this.patternBuffer! } },
+      { binding: 4, resource: { buffer: this.orbParamsBuffer! } },
+    ]);
+
+    // Dispatch ORB computation
+    const workgroups = Math.ceil(keypoints.length / 64);
+    this.orbPipeline.executeAndSubmit(orbBindGroup, { x: workgroups, y: 1, z: 1 });
+
+    // Read back descriptors
+    const descriptorsReadback = device.createBuffer({
+      size: keypoints.length * 32, // 8 u32s per descriptor
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    const encoder = device.createCommandEncoder();
+    encoder.copyBufferToBuffer(
+      this.descriptorsBuffer!,
+      0,
+      descriptorsReadback,
+      0,
+      keypoints.length * 32
+    );
+    device.queue.submit([encoder.finish()]);
+
+    await descriptorsReadback.mapAsync(GPUMapMode.READ);
+    const descriptors = new Uint32Array(descriptorsReadback.getMappedRange()).slice();
+    descriptorsReadback.unmap();
+    descriptorsReadback.destroy();
+
     this.currentDescriptors = descriptors;
     return descriptors;
   }
@@ -325,9 +390,88 @@ export class FeatureDetector {
     descriptors1: Uint32Array,
     descriptors2: Uint32Array
   ): Promise<FeatureMatch[]> {
-    // Placeholder - would run matching on GPU
-    // For now, return empty
-    return [];
+    if (!this.matchingPipeline || descriptors1.length === 0 || descriptors2.length === 0) {
+      return [];
+    }
+
+    const device = this.gpuContext.getDevice();
+    const numDesc1 = descriptors1.length / 8;
+    const numDesc2 = descriptors2.length / 8;
+
+    // Create descriptor buffers
+    const desc1Buffer = device.createBuffer({
+      size: descriptors1.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    const desc2Buffer = device.createBuffer({
+      size: descriptors2.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    device.queue.writeBuffer(desc1Buffer, 0, descriptors1.buffer);
+    device.queue.writeBuffer(desc2Buffer, 0, descriptors2.buffer);
+
+    // Update matching parameters
+    const matchingData = new Uint32Array(4);
+    matchingData[0] = numDesc1;
+    matchingData[1] = numDesc2;
+    matchingData[2] = this.config.matchingMaxDistance;
+    const floatView = new Float32Array(matchingData.buffer);
+    floatView[3] = this.config.matchingRatioThreshold;
+    device.queue.writeBuffer(this.matchingParamsBuffer!, 0, matchingData.buffer);
+
+    // Create bind group for matching
+    const matchingBindGroup = this.matchingPipeline.createBindGroup([
+      { binding: 0, resource: { buffer: desc1Buffer } },
+      { binding: 1, resource: { buffer: desc2Buffer } },
+      { binding: 2, resource: { buffer: this.matchesBuffer! } },
+      { binding: 3, resource: { buffer: this.matchingParamsBuffer! } },
+    ]);
+
+    // Dispatch matching
+    const workgroups = Math.ceil(numDesc1 / 64);
+    this.matchingPipeline.executeAndSubmit(matchingBindGroup, { x: workgroups, y: 1, z: 1 });
+
+    // Read back matches
+    const matchesReadback = device.createBuffer({
+      size: numDesc1 * 8, // vec2<i32> per query descriptor
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    const encoder = device.createCommandEncoder();
+    encoder.copyBufferToBuffer(
+      this.matchesBuffer!,
+      0,
+      matchesReadback,
+      0,
+      numDesc1 * 8
+    );
+    device.queue.submit([encoder.finish()]);
+
+    await matchesReadback.mapAsync(GPUMapMode.READ);
+    const matchesData = new Int32Array(matchesReadback.getMappedRange());
+
+    const matches: FeatureMatch[] = [];
+    for (let i = 0; i < numDesc1; i++) {
+      const trainIdx = matchesData[i * 2];
+      const distance = matchesData[i * 2 + 1];
+
+      if (trainIdx >= 0 && distance < this.config.matchingMaxDistance) {
+        matches.push({
+          queryIdx: i,
+          trainIdx,
+          distance,
+        });
+      }
+    }
+
+    matchesReadback.unmap();
+    matchesReadback.destroy();
+    desc1Buffer.destroy();
+    desc2Buffer.destroy();
+
+    console.log(`[FeatureDetector] Found ${matches.length} matches`);
+    return matches;
   }
 
   /**

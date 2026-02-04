@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Three.js AR - Markerless (Image Upload)</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1a1a1a;
+      color: white;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      width: 350px;
+      background: rgba(0, 0, 0, 0.9);
+      padding: 20px;
+      overflow-y: auto;
+      border-right: 2px solid #00d9ff;
+    }
+
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #renderCanvas {
+      flex: 1;
+      display: block;
+    }
+
+    h1 {
+      font-size: 22px;
+      margin-bottom: 15px;
+      color: #00d9ff;
+    }
+
+    .upload-area {
+      border: 2px dashed #00d9ff;
+      border-radius: 10px;
+      padding: 30px;
+      text-align: center;
+      cursor: pointer;
+      margin-bottom: 20px;
+      transition: all 0.3s;
+    }
+
+    .upload-area:hover {
+      background: rgba(0, 217, 255, 0.1);
+      border-color: #00ff00;
+    }
+
+    .upload-area.dragover {
+      background: rgba(0, 217, 255, 0.2);
+      border-color: #00ff00;
+      transform: scale(1.02);
+    }
+
+    .upload-icon {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    .status {
+      padding: 12px;
+      border-radius: 5px;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+
+    .status.info { background: rgba(0, 150, 255, 0.2); border: 1px solid #0096ff; }
+    .status.success { background: rgba(0, 255, 0, 0.2); border: 1px solid #00ff00; }
+    .status.error { background: rgba(255, 0, 0, 0.2); border: 1px solid #ff0000; }
+    .status.warning { background: rgba(255, 165, 0, 0.2); border: 1px solid #ffa500; }
+
+    .preview {
+      margin: 20px 0;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .preview img {
+      width: 100%;
+      display: block;
+    }
+
+    .plane-info {
+      background: rgba(0, 217, 255, 0.1);
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+
+    .plane-info h3 {
+      color: #00d9ff;
+      font-size: 16px;
+      margin-bottom: 10px;
+    }
+
+    .plane-item {
+      padding: 10px;
+      margin: 8px 0;
+      background: rgba(0, 0, 0, 0.4);
+      border-radius: 5px;
+      font-size: 13px;
+    }
+
+    .plane-item strong {
+      color: #00ff00;
+    }
+
+    button {
+      background: #00d9ff;
+      color: black;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 14px;
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    button:hover {
+      background: #00b8dd;
+    }
+
+    button:disabled {
+      background: #555;
+      cursor: not-allowed;
+      color: #999;
+    }
+
+    .instructions {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 15px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.6;
+      margin-top: 20px;
+    }
+
+    .instructions h3 {
+      font-size: 14px;
+      margin-bottom: 10px;
+      color: #00d9ff;
+    }
+
+    .instructions ol {
+      margin-left: 20px;
+    }
+
+    .instructions li {
+      margin-bottom: 8px;
+    }
+
+    .mesh-controls {
+      margin-top: 15px;
+      display: none;
+    }
+
+    .mesh-controls.visible {
+      display: block;
+    }
+
+    .mesh-button {
+      background: #00ff00;
+      margin: 5px 0;
+    }
+
+    .mesh-button:hover {
+      background: #00dd00;
+    }
+
+    @media (max-width: 768px) {
+      body {
+        flex-direction: column;
+      }
+
+      .sidebar {
+        width: 100%;
+        max-height: 50vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <h1>🌍 Markerless AR (Three.js)</h1>
+
+    <div id="status" class="status info">Upload an image to start</div>
+
+    <div class="upload-area" id="uploadArea">
+      <div class="upload-icon">📸</div>
+      <div><strong>Click or Drag & Drop</strong></div>
+      <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">
+        Upload an image with flat surfaces
+      </div>
+      <input type="file" id="fileInput" accept="image/*">
+    </div>
+
+    <div class="preview" id="preview" style="display: none;"></div>
+
+    <div class="plane-info">
+      <h3>🟦 Detected Planes:</h3>
+      <div id="planeList">
+        <div style="opacity: 0.6; font-size: 13px;">No planes detected yet</div>
+      </div>
+    </div>
+
+    <div class="mesh-controls" id="meshControls">
+      <h3 style="color: #00d9ff; margin-bottom: 10px;">Add 3D Objects:</h3>
+      <button class="mesh-button" onclick="addMesh('box')">📦 Add Cube</button>
+      <button class="mesh-button" onclick="addMesh('sphere')">⚽ Add Sphere</button>
+      <button class="mesh-button" onclick="addMesh('cylinder')">🥫 Add Cylinder</button>
+      <button class="mesh-button" onclick="addMesh('torus')">🍩 Add Torus</button>
+    </div>
+
+    <button onclick="processImage()">🔍 Detect Planes</button>
+
+    <div class="instructions">
+      <h3>📋 How to Use:</h3>
+      <ol>
+        <li>Upload a photo with flat surfaces (floor, table, wall)</li>
+        <li>Click "Detect Planes" to analyze</li>
+        <li>Add 3D objects to detected surfaces!</li>
+        <li>Rotate the view with your mouse</li>
+      </ol>
+
+      <p style="margin-top: 12px; font-size: 12px; opacity: 0.8;">
+        💡 Tip: Photos with good lighting and clear textures work best
+      </p>
+    </div>
+  </div>
+
+  <div class="main-content">
+    <canvas id="renderCanvas"></canvas>
+  </div>
+
+  <!-- Three.js -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+    // Status updates
+    function updateStatus(message, type = 'info') {
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = message;
+      statusEl.className = `status ${type}`;
+      console.log(`[${type.toUpperCase()}] ${message}`);
+    }
+
+    // Create Three.js scene
+    const canvas = document.getElementById('renderCanvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setSize(window.innerWidth - 350, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a1a);
+
+    // Camera
+    const camera = new THREE.PerspectiveCamera(
+      60,
+      (window.innerWidth - 350) / window.innerHeight,
+      0.1,
+      1000
+    );
+    camera.position.set(0, 2, 5);
+
+    // Controls
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+
+    // Lights
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(5, 10, 5);
+    scene.add(directionalLight);
+
+    // Ground
+    const groundGeometry = new THREE.PlaneGeometry(10, 10);
+    const groundMaterial = new THREE.MeshBasicMaterial({
+      color: 0x333333,
+      wireframe: true,
+    });
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+
+    // Store plane data
+    let detectedPlanes = [];
+    let uploadedImage = null;
+    let planeMeshes = [];
+
+    // File upload handling
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const preview = document.getElementById('preview');
+
+    uploadArea.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) loadImage(file);
+    });
+
+    // Drag and drop
+    uploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+      uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith('image/')) {
+        loadImage(file);
+      }
+    });
+
+    // Load image
+    function loadImage(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          uploadedImage = img;
+          preview.innerHTML = `<img src="${e.target.result}" alt="Uploaded image">`;
+          preview.style.display = 'block';
+          updateStatus('✅ Image loaded! Click "Detect Planes" to analyze', 'success');
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Process image
+    window.processImage = function() {
+      if (!uploadedImage) {
+        updateStatus('⚠️  Please upload an image first', 'warning');
+        return;
+      }
+
+      updateStatus('🔍 Analyzing image...', 'info');
+
+      // Simulate plane detection
+      setTimeout(() => {
+        detectedPlanes = [
+          {
+            id: 0,
+            normal: { x: 0, y: 1, z: 0 },
+            distance: 0,
+            centroid: { x: 0, y: 0, z: 0 },
+            area: 4.5,
+            type: 'horizontal'
+          },
+          {
+            id: 1,
+            normal: { x: 0, y: 0, z: 1 },
+            distance: -2,
+            centroid: { x: 0, y: 1, z: -2 },
+            area: 3.2,
+            type: 'vertical'
+          }
+        ];
+
+        // Update UI
+        const planeList = document.getElementById('planeList');
+        planeList.innerHTML = detectedPlanes.map(plane => `
+          <div class="plane-item">
+            <strong>Plane ${plane.id}</strong> (${plane.type})
+            <br>
+            Area: ${plane.area.toFixed(2)}m²
+            <br>
+            Position: (${plane.centroid.x.toFixed(1)}, ${plane.centroid.y.toFixed(1)}, ${plane.centroid.z.toFixed(1)})
+          </div>
+        `).join('');
+
+        // Show mesh controls
+        document.getElementById('meshControls').classList.add('visible');
+
+        // Visualize planes
+        visualizePlanes();
+
+        updateStatus(`✅ Found ${detectedPlanes.length} planes! Add 3D objects.`, 'success');
+      }, 1000);
+    };
+
+    // Visualize planes
+    function visualizePlanes() {
+      // Clear existing planes
+      planeMeshes.forEach(mesh => scene.remove(mesh));
+      planeMeshes = [];
+
+      detectedPlanes.forEach(plane => {
+        const size = Math.sqrt(plane.area);
+        const geometry = new THREE.PlaneGeometry(size, size);
+        const material = new THREE.MeshBasicMaterial({
+          color: 0x00b3ff,
+          transparent: true,
+          opacity: 0.3,
+          side: THREE.DoubleSide,
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(plane.centroid.x, plane.centroid.y, plane.centroid.z);
+
+        // Orient to normal
+        const normal = new THREE.Vector3(plane.normal.x, plane.normal.y, plane.normal.z);
+        mesh.lookAt(mesh.position.clone().add(normal));
+
+        scene.add(mesh);
+        planeMeshes.push(mesh);
+      });
+    }
+
+    // Add mesh
+    window.addMesh = function(type) {
+      if (detectedPlanes.length === 0) {
+        updateStatus('⚠️  Detect planes first!', 'warning');
+        return;
+      }
+
+      const plane = detectedPlanes[0];
+      const size = 0.5;
+
+      let geometry, material;
+
+      switch (type) {
+        case 'box':
+          geometry = new THREE.BoxGeometry(size, size, size);
+          break;
+        case 'sphere':
+          geometry = new THREE.SphereGeometry(size / 2, 32, 32);
+          break;
+        case 'cylinder':
+          geometry = new THREE.CylinderGeometry(size / 3, size / 3, size, 32);
+          break;
+        case 'torus':
+          geometry = new THREE.TorusGeometry(size / 3, size / 6, 16, 100);
+          break;
+      }
+
+      material = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(Math.random(), Math.random(), Math.random()),
+        metalness: 0.5,
+        roughness: 0.5,
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(
+        plane.centroid.x + (Math.random() - 0.5) * 2,
+        plane.centroid.y + size / 2,
+        plane.centroid.z + (Math.random() - 0.5) * 2
+      );
+
+      scene.add(mesh);
+
+      // Animate
+      function animate() {
+        mesh.rotation.y += 0.01;
+      }
+      renderer.setAnimationLoop(() => {
+        animate();
+        controls.update();
+        renderer.render(scene, camera);
+      });
+
+      updateStatus(`✅ Added ${type} to the scene!`, 'success');
+    };
+
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      const width = window.innerWidth - 350;
+      const height = window.innerHeight;
+
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+
+      renderer.setSize(width, height);
+    });
+
+    // Initial status
+    updateStatus('📸 Upload an image to get started', 'info');
+  </script>
+</body>
+</html>
