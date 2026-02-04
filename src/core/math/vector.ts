@@ -1,0 +1,88 @@
+/**
+ * Vector Math Utilities
+ * 3D vector operations
+ */
+
+export class Vector3 {
+  constructor(
+    public x: number = 0,
+    public y: number = 0,
+    public z: number = 0
+  ) {}
+
+  /**
+   * Add two vectors
+   */
+  add(other: Vector3): Vector3 {
+    return new Vector3(this.x + other.x, this.y + other.y, this.z + other.z);
+  }
+
+  /**
+   * Subtract two vectors
+   */
+  subtract(other: Vector3): Vector3 {
+    return new Vector3(this.x - other.x, this.y - other.y, this.z - other.z);
+  }
+
+  /**
+   * Multiply by scalar
+   */
+  multiply(scalar: number): Vector3 {
+    return new Vector3(this.x * scalar, this.y * scalar, this.z * scalar);
+  }
+
+  /**
+   * Dot product
+   */
+  dot(other: Vector3): number {
+    return this.x * other.x + this.y * other.y + this.z * other.z;
+  }
+
+  /**
+   * Cross product
+   */
+  cross(other: Vector3): Vector3 {
+    return new Vector3(
+      this.y * other.z - this.z * other.y,
+      this.z * other.x - this.x * other.z,
+      this.x * other.y - this.y * other.x
+    );
+  }
+
+  /**
+   * Vector length
+   */
+  length(): number {
+    return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
+  }
+
+  /**
+   * Normalize vector
+   */
+  normalize(): Vector3 {
+    const len = this.length();
+    if (len === 0) return new Vector3(0, 0, 0);
+    return new Vector3(this.x / len, this.y / len, this.z / len);
+  }
+
+  /**
+   * Distance to another vector
+   */
+  distanceTo(other: Vector3): number {
+    return this.subtract(other).length();
+  }
+
+  /**
+   * Clone vector
+   */
+  clone(): Vector3 {
+    return new Vector3(this.x, this.y, this.z);
+  }
+
+  /**
+   * Convert to array
+   */
+  toArray(): [number, number, number] {
+    return [this.x, this.y, this.z];
+  }
+}

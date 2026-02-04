@@ -1,0 +1,54 @@
+{
+  "name": "babylonjs-ar",
+  "version": "0.1.0",
+  "description": "High-performance WebGPU AR library for Babylon.js with marker tracking and plane detection",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./babylon": {
+      "import": "./dist/adapters/babylon/index.js",
+      "types": "./dist/adapters/babylon/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --outdir=dist --target=browser --format=esm --sourcemap=external && bun run build:types",
+    "build:types": "tsc --declaration --emitDeclarationOnly --outDir dist",
+    "dev": "bun run dev-server.ts",
+    "test": "bun test",
+    "bench": "bun run benchmarks/index.ts"
+  },
+  "keywords": [
+    "ar",
+    "augmented-reality",
+    "webgpu",
+    "babylonjs",
+    "aruco",
+    "marker-tracking",
+    "plane-detection",
+    "computer-vision",
+    "6dof"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "@babylonjs/core": "^7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@babylonjs/core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@webgpu/types": "^0.1.51",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}

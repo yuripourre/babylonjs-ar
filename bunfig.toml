@@ -1,0 +1,13 @@
+[install]
+# Optimize for speed
+cache = true
+exact = false
+
+[test]
+# Test configuration
+coverage = true
+
+[run]
+# Development server settings
+watch = true
+hot = true
