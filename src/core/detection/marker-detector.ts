@@ -7,6 +7,9 @@ import type { GPUContextManager } from '../gpu/gpu-context';
 import { ComputePipeline, calculateWorkgroupCount } from '../gpu/compute-pipeline';
 import { Matrix4 } from '../math/matrix';
 import { Vector3 } from '../math/vector';
+import { ContourProcessor, type Quad } from './contour-processor';
+import { ArucoDecoder } from './aruco-decoder';
+import { Homography } from '../math/homography';
 
 export interface MarkerCorners {
   topLeft: [number, number];
@@ -160,7 +163,7 @@ export class MarkerDetector {
     this.updateCornerParams();
 
     // Create readback buffer for CPU processing
-    const readbackSize = width * height * 4; // RGBA32
+    const readbackSize = width * height; // R8 (threshold texture)
     this.readbackBuffer = device.createBuffer({
       label: 'Readback',
       size: readbackSize,
@@ -255,34 +258,26 @@ export class MarkerDetector {
     contourPass.dispatchWorkgroups(workgroupCount.x, workgroupCount.y);
     contourPass.end();
 
-    // Step 4: Corner detection
-    const cornerBindGroup = this.cornerPipeline.createBindGroup([
-      { binding: 0, resource: this.thresholdTexture!.createView() },
-      { binding: 1, resource: this.cornerTexture!.createView() },
-      { binding: 2, resource: { buffer: this.cornerParamsBuffer! } },
-    ]);
-
-    const cornerPass = encoder.beginComputePass({ label: 'Corner Detection' });
-    cornerPass.setPipeline(this.cornerPipeline.getPipeline());
-    cornerPass.setBindGroup(0, cornerBindGroup);
-    cornerPass.dispatchWorkgroups(workgroupCount.x, workgroupCount.y);
-    cornerPass.end();
-
-    // Copy corner data to readback buffer for CPU processing
+    // Copy threshold data to readback buffer for CPU processing
     encoder.copyTextureToBuffer(
-      { texture: this.cornerTexture! },
-      { buffer: this.readbackBuffer!, bytesPerRow: width * 16 },
+      { texture: this.thresholdTexture! },
+      { buffer: this.readbackBuffer!, bytesPerRow: width },
       { width, height }
     );
 
     device.queue.submit([encoder.finish()]);
 
-    // Read back corner data and process on CPU
+    // Read back threshold data and process on CPU
     await this.readbackBuffer!.mapAsync(GPUMapMode.READ);
-    const cornerData = new Float32Array(this.readbackBuffer!.getMappedRange());
+    const thresholdData = new Uint8Array(this.readbackBuffer!.getMappedRange());
 
-    // Process corners to find markers (simplified for now)
-    const markers = this.findMarkersFromCorners(cornerData, width, height);
+    // Process threshold image to find markers
+    const markers = await this.findMarkersFromThreshold(
+      thresholdData,
+      width,
+      height,
+      grayscaleTexture
+    );
 
     this.readbackBuffer!.unmap();
 
@@ -290,27 +285,170 @@ export class MarkerDetector {
   }
 
   /**
-   * Find markers from corner response map (CPU processing)
+   * Find markers from threshold image (CPU processing)
    */
-  private findMarkersFromCorners(
-    cornerData: Float32Array,
+  private async findMarkersFromThreshold(
+    thresholdData: Uint8Array,
     width: number,
-    height: number
-  ): DetectedMarker[] {
+    height: number,
+    grayscaleTexture: GPUTexture
+  ): Promise<DetectedMarker[]> {
     const markers: DetectedMarker[] = [];
 
-    // Simplified: find strong corners and group into quads
-    // In a full implementation, this would:
-    // 1. Non-maximum suppression on corner responses
-    // 2. Group corners into quadrilaterals
-    // 3. Validate quad geometry (convex, reasonable aspect ratio)
-    // 4. Extract and decode marker bits
-    // 5. Verify parity bits
+    // Step 1: Find contours
+    const contours = ContourProcessor.findContours(
+      thresholdData,
+      width,
+      height,
+      this.config.minMarkerPerimeter,
+      this.config.maxMarkerPerimeter
+    );
 
-    // For now, return empty array (placeholder)
-    // TODO: Implement full marker detection pipeline
+    console.log(`[MarkerDetector] Found ${contours.length} contours`);
+
+    // Step 2: Process each contour
+    for (const contour of contours) {
+      // Approximate to polygon
+      const polygon = ContourProcessor.approximatePolygon(contour);
+
+      // Try to extract quad
+      const quad = ContourProcessor.extractQuad(polygon);
+      if (!quad) continue;
+
+      // Step 3: Warp marker to square and decode
+      const decoded = await this.decodeMarker(quad, grayscaleTexture);
+      if (decoded) {
+        markers.push({
+          id: decoded.id,
+          corners: this.quadToMarkerCorners(quad, decoded.rotation),
+          confidence: Math.max(0, 1.0 - decoded.hamming / 16), // Normalize hamming to confidence
+        });
+
+        console.log(`[MarkerDetector] Detected marker ${decoded.id} (rotation: ${decoded.rotation * 90}°)`);
+      }
+    }
 
     return markers;
+  }
+
+  /**
+   * Decode marker from quad
+   */
+  private async decodeMarker(
+    quad: Quad,
+    grayscaleTexture: GPUTexture
+  ): Promise<{ id: number; rotation: 0 | 1 | 2 | 3; hamming: number } | null> {
+    const device = this.gpuContext.getDevice();
+
+    // Warp marker to 32x32 square
+    const warpSize = 32;
+
+    // Compute homography
+    const homography = Homography.quadToSquare(quad.corners, warpSize);
+
+    // Create output texture for warped marker
+    const warpedTexture = device.createTexture({
+      size: { width: warpSize, height: warpSize },
+      format: 'r8unorm',
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    });
+
+    // Create sampler
+    const sampler = device.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear',
+    });
+
+    // Create homography buffer
+    const homographyBuffer = device.createBuffer({
+      size: 48, // 12 floats
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(homographyBuffer, 0, homography.buffer);
+
+    // Create warp pipeline if needed
+    if (!this.warpPipeline) {
+      const { perspectiveWarpShader } = await import('../../shaders/marker-shaders');
+      this.warpPipeline = new ComputePipeline(this.gpuContext, {
+        label: 'Perspective Warp',
+        shaderCode: perspectiveWarpShader,
+      });
+    }
+
+    // Execute warp
+    const warpBindGroup = this.warpPipeline.createBindGroup([
+      { binding: 0, resource: grayscaleTexture.createView() },
+      { binding: 1, resource: sampler },
+      { binding: 2, resource: warpedTexture.createView() },
+      { binding: 3, resource: { buffer: homographyBuffer } },
+    ]);
+
+    const warpCount = calculateWorkgroupCount(warpSize, warpSize, { x: 8, y: 8 });
+
+    const encoder = device.createCommandEncoder();
+    const warpPass = encoder.beginComputePass();
+    warpPass.setPipeline(this.warpPipeline.getPipeline());
+    warpPass.setBindGroup(0, warpBindGroup);
+    warpPass.dispatchWorkgroups(warpCount.x, warpCount.y);
+    warpPass.end();
+
+    // Read back warped image
+    const warpReadbackBuffer = device.createBuffer({
+      size: warpSize * warpSize,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    encoder.copyTextureToBuffer(
+      { texture: warpedTexture },
+      { buffer: warpReadbackBuffer, bytesPerRow: warpSize },
+      { width: warpSize, height: warpSize }
+    );
+
+    device.queue.submit([encoder.finish()]);
+
+    await warpReadbackBuffer.mapAsync(GPUMapMode.READ);
+    const warpedData = new Uint8Array(warpReadbackBuffer.getMappedRange());
+
+    // Verify border
+    if (!ArucoDecoder.verifyBorder(warpedData, warpSize, this.config.dictionarySize)) {
+      warpReadbackBuffer.unmap();
+      warpedTexture.destroy();
+      homographyBuffer.destroy();
+      warpReadbackBuffer.destroy();
+      return null;
+    }
+
+    // Extract and decode bits
+    const decoder = new ArucoDecoder(this.config.dictionarySize);
+    const bits = decoder.extractBits(warpedData, warpSize, this.config.dictionarySize);
+    const decoded = decoder.decode(bits);
+
+    // Cleanup
+    warpReadbackBuffer.unmap();
+    warpedTexture.destroy();
+    homographyBuffer.destroy();
+    warpReadbackBuffer.destroy();
+
+    return decoded;
+  }
+
+  /**
+   * Convert quad corners to marker corners accounting for rotation
+   */
+  private quadToMarkerCorners(quad: Quad, rotation: 0 | 1 | 2 | 3): MarkerCorners {
+    // Rotate corners to match marker orientation
+    const corners = quad.corners.slice();
+
+    for (let i = 0; i < rotation; i++) {
+      corners.unshift(corners.pop()!);
+    }
+
+    return {
+      topLeft: [corners[0].x, corners[0].y],
+      topRight: [corners[1].x, corners[1].y],
+      bottomRight: [corners[2].x, corners[2].y],
+      bottomLeft: [corners[3].x, corners[3].y],
+    };
   }
 
   /**

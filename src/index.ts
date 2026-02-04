@@ -38,6 +38,11 @@ export { KalmanFilter } from './core/tracking/kalman-filter';
 export { Matrix4 } from './core/math/matrix';
 export { Vector3 } from './core/math/vector';
 export { Quaternion } from './core/math/quaternion';
+export { Homography } from './core/math/homography';
+
+// Detection utilities
+export { ContourProcessor, type Point, type Contour, type Quad } from './core/detection/contour-processor';
+export { ArucoDecoder, type DictionarySize, type MarkerBits, type DecodedMarker } from './core/detection/aruco-decoder';
 
 // Version
 export const VERSION = '0.2.0';
