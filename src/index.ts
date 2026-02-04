@@ -43,6 +43,12 @@ export { Homography } from './core/math/homography';
 // Detection utilities
 export { ContourProcessor, type Point, type Contour, type Quad } from './core/detection/contour-processor';
 export { ArucoDecoder, type DictionarySize, type MarkerBits, type DecodedMarker } from './core/detection/aruco-decoder';
+export {
+  FeatureDetector,
+  type FeatureDetectorConfig,
+  type Keypoint,
+  type FeatureMatch,
+} from './core/detection/feature-detector';
 
 // Version
-export const VERSION = '0.2.0';
+export const VERSION = '0.3.0';
