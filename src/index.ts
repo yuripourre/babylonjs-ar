@@ -99,5 +99,24 @@ export { planeShaders } from './shaders/plane-shaders';
 export { depthShaders } from './shaders/depth-shaders';
 export { lightingShaders } from './shaders/lighting-shaders';
 
+// Developer Experience
+export {
+  ARBuilder,
+  type ARPreset,
+  type AREventHandlers,
+} from './core/ar-builder';
+export {
+  ARDebug,
+  createDebugOverlay,
+  type DebugConfig,
+} from './utils/ar-debug';
+export {
+  ARError,
+  ARErrors,
+  diagnoseEnvironment,
+  printDiagnostics,
+  withErrorHandling,
+} from './utils/ar-errors';
+
 // Version
-export const VERSION = '0.5.0'; // Phase 4: Advanced optimizations
+export const VERSION = '0.6.0'; // Developer Experience improvements
