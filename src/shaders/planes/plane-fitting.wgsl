@@ -23,7 +23,8 @@ struct RANSACParams {
   normalThreshold: f32, // Cosine of max angle difference
   minInliers: u32,
   seed: u32,
-  _padding: vec2<f32>,
+  earlyTermThreshold: f32, // Inlier ratio for early termination (e.g., 0.8)
+  _padding: f32,
 }
 
 // Simple random number generator (LCG)
@@ -106,9 +107,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
   let planeNormal = normal / length;
   let planeDistance = -dot(planeNormal, p0);
 
-  // Count inliers
+  // Count inliers with early termination
   var inlierCount = 0u;
   var inlierSum = vec3<f32>(0.0);
+  let earlyTermCount = u32(f32(params.numPoints) * params.earlyTermThreshold);
 
   for (var i = 0u; i < params.numPoints; i++) {
     if (points[i].w < 0.5) {
@@ -131,6 +133,11 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
       inlierCount++;
       inlierSum += point;
+
+      // Early termination if we've found enough inliers
+      if (params.earlyTermThreshold > 0.0 && inlierCount >= earlyTermCount) {
+        break; // Excellent plane found, no need to check remaining points
+      }
     }
   }
 

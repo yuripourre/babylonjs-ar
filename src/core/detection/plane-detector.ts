@@ -58,6 +58,13 @@ export class PlaneDetector {
   private trackedPlanes: Map<number, DetectedPlane> = new Map();
   private nextPlaneId = 0;
 
+  // Boundary cache for performance
+  private boundaryCache: Map<number, {
+    boundary: Vector3[];
+    planeHash: number;
+    timestamp: number;
+  }> = new Map();
+
   constructor(gpuContext: GPUContextManager, config: PlaneConfig = {}) {
     this.gpuContext = gpuContext;
     this.config = {
@@ -186,6 +193,8 @@ export class PlaneDetector {
 
     data[4] = this.config.minInliers;
     data[5] = Math.floor(Math.random() * 0xffffffff); // seed
+    floatView[6] = 0.8; // earlyTermThreshold: terminate if 80% inliers found
+    floatView[7] = 0.0; // padding
 
     this.gpuContext.writeBuffer(this.ransacParamsBuffer!, 0, data);
   }
@@ -220,6 +229,8 @@ export class PlaneDetector {
     floatView[3] = Math.cos((this.config.normalThreshold * Math.PI) / 180);
     ransacData[4] = this.config.minInliers;
     ransacData[5] = Math.floor(Math.random() * 0xffffffff);
+    floatView[6] = 0.8; // earlyTermThreshold: terminate if 80% inliers found
+    floatView[7] = 0.0; // padding
     device.queue.writeBuffer(this.ransacParamsBuffer!, 0, ransacData);
 
     // Run RANSAC
@@ -257,9 +268,9 @@ export class PlaneDetector {
     const detectedPlanes = this.extractBestPlanes(planesData);
     this.planesReadbackBuffer!.unmap();
 
-    // Extract boundaries for detected planes
+    // Extract boundaries for detected planes (with caching)
     for (const plane of detectedPlanes) {
-      plane.boundary = this.extractBoundary(plane, points);
+      plane.boundary = this.getCachedBoundary(plane, points);
     }
 
     // Update tracking
@@ -346,6 +357,46 @@ export class PlaneDetector {
     }
 
     return planes;
+  }
+
+  /**
+   * Hash plane parameters for caching
+   */
+  private hashPlane(plane: DetectedPlane): number {
+    // Hash based on normal and distance (quantized to 1cm)
+    const nx = Math.round(plane.normal.x * 100);
+    const ny = Math.round(plane.normal.y * 100);
+    const nz = Math.round(plane.normal.z * 100);
+    const d = Math.round(plane.distance * 100);
+
+    // Simple hash combining all components
+    return ((nx * 73856093) ^ (ny * 19349663) ^ (nz * 83492791) ^ (d * 50331653)) >>> 0;
+  }
+
+  /**
+   * Get cached boundary or compute new one
+   */
+  private getCachedBoundary(plane: DetectedPlane, points: Float32Array): Vector3[] {
+    const hash = this.hashPlane(plane);
+    const cached = this.boundaryCache.get(plane.id);
+    const now = performance.now();
+
+    // Check if cache is valid
+    if (cached && cached.planeHash === hash && now - cached.timestamp < 1000) {
+      return cached.boundary; // Use cached boundary
+    }
+
+    // Compute new boundary
+    const boundary = this.extractBoundary(plane, points);
+
+    // Update cache
+    this.boundaryCache.set(plane.id, {
+      boundary,
+      planeHash: hash,
+      timestamp: now,
+    });
+
+    return boundary;
   }
 
   /**
@@ -583,6 +634,7 @@ export class PlaneDetector {
    */
   reset(): void {
     this.trackedPlanes.clear();
+    this.boundaryCache.clear();
     this.nextPlaneId = 0;
   }
 

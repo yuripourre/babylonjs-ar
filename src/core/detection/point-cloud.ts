@@ -139,22 +139,32 @@ export class PointCloudGenerator {
   }
 
   /**
+   * Hash 3D voxel coordinates to integer key
+   */
+  private hash3D(x: number, y: number, z: number): number {
+    // Large prime numbers for good distribution
+    return ((x * 73856093) ^ (y * 19349663) ^ (z * 83492791)) >>> 0;
+  }
+
+  /**
    * Downsample point cloud
    */
   downsample(points: Float32Array, gridSize: number = 0.05): Float32Array {
-    // Voxel grid downsampling
-    const voxels = new Map<string, Vector3>();
+    // Voxel grid downsampling with integer keys
+    const voxels = new Map<number, Vector3>();
 
     for (let i = 0; i < points.length; i += 4) {
       const x = points[i];
       const y = points[i + 1];
       const z = points[i + 2];
 
-      // Compute voxel key
+      // Compute voxel coordinates
       const vx = Math.floor(x / gridSize);
       const vy = Math.floor(y / gridSize);
       const vz = Math.floor(z / gridSize);
-      const key = `${vx},${vy},${vz}`;
+
+      // Hash to integer key (much faster than string)
+      const key = this.hash3D(vx, vy, vz);
 
       if (!voxels.has(key)) {
         voxels.set(key, new Vector3(x, y, z));

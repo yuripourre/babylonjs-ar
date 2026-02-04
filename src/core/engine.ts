@@ -47,6 +47,7 @@ export class AREngine {
   // GPU resources
   private grayscalePipeline: ComputePipeline | null = null;
   private grayscaleTexture: GPUTexture | null = null;
+  private grayscaleTextureView: GPUTextureView | null = null; // Cached view
   private grayscaleBindGroup: GPUBindGroup | null = null;
 
   // Frame timing
@@ -152,6 +153,9 @@ export class AREngine {
         GPUTextureUsage.COPY_SRC,
     });
 
+    // Cache texture view for reuse
+    this.grayscaleTextureView = this.grayscaleTexture.createView();
+
     console.log('[AREngine] Pipelines initialized');
   }
 
@@ -226,9 +230,10 @@ export class AREngine {
         );
 
         // Need to recreate bind group each frame for external texture
+        // But use cached texture view for better performance
         const bindGroup = this.grayscalePipeline.createBindGroup([
           { binding: 0, resource: externalTexture },
-          { binding: 1, resource: this.grayscaleTexture.createView() },
+          { binding: 1, resource: this.grayscaleTextureView! },
         ]);
 
         this.grayscalePipeline.executeAndSubmit(bindGroup, workgroupCount);
