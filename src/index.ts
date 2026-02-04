@@ -13,6 +13,10 @@ export {
   calculateWorkgroupCount,
   alignBufferSize,
 } from './core/gpu/compute-pipeline';
+export {
+  IndirectDispatch,
+  type IndirectDispatchConfig,
+} from './core/gpu/indirect-dispatch';
 export { CameraManager, type CameraConfig, type CameraFrame } from './core/camera/camera-manager';
 
 // Tracking and detection
@@ -76,6 +80,19 @@ export {
   type PerformanceMetrics,
   type PerformanceConfig,
 } from './utils/performance-monitor';
+export {
+  AdaptiveQuality,
+  type QualitySettings,
+  type PerformanceMetrics as AdaptivePerformanceMetrics,
+} from './utils/adaptive-quality';
+export {
+  TemporalCoherence,
+  type TrackedMarker as TemporalTrackedMarker,
+  type TrackedPlane,
+  type TrackedFeature,
+  type TemporalConfig,
+} from './utils/temporal-coherence';
+export { KDTree } from './utils/kdtree';
 
 // Shaders
 export { planeShaders } from './shaders/plane-shaders';
@@ -83,4 +100,4 @@ export { depthShaders } from './shaders/depth-shaders';
 export { lightingShaders } from './shaders/lighting-shaders';
 
 // Version
-export const VERSION = '0.4.0';
+export const VERSION = '0.5.0'; // Phase 4: Advanced optimizations

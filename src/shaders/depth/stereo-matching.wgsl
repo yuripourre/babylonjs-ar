@@ -1,10 +1,14 @@
 // Stereo Matching Shader
 // Computes disparity/depth from stereo image pair using block matching
+// Phase 4: Hierarchical coarse-to-fine matching for 2× speedup
 
 @group(0) @binding(0) var leftImage: texture_2d<f32>;
 @group(0) @binding(1) var rightImage: texture_2d<f32>;
 @group(0) @binding(2) var disparityOutput: texture_storage_2d<r32float, write>;
 @group(0) @binding(3) var<uniform> params: StereoParams;
+
+// Phase 4: Optional coarse disparity map for hierarchical refinement
+@group(0) @binding(4) var coarseDisparity: texture_2d<f32>;
 
 struct StereoParams {
   width: u32,
@@ -14,7 +18,9 @@ struct StereoParams {
   blockSize: u32,      // e.g., 9 for 9x9 blocks
   baseline: f32,       // Stereo baseline in meters
   focalLength: f32,    // Focal length in pixels
-  _padding: u32,
+  hierarchical: u32,   // 1 if using hierarchical mode, 0 otherwise
+  searchRange: u32,    // For hierarchical: narrow search range around coarse estimate
+  _padding: vec2<u32>,
 }
 
 // Sum of Absolute Differences (SAD) block matching
@@ -118,11 +124,31 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
   // Compute census transform for left pixel
   let leftCensus = computeCensus(coord, leftImage, halfBlock);
 
+  // Phase 4: Determine search range based on hierarchical mode
+  var searchMin = params.minDisparity;
+  var searchMax = params.maxDisparity;
+
+  if (params.hierarchical != 0u) {
+    // Read coarse disparity estimate (from 1/2 or 1/4 resolution)
+    let coarseDepth = textureLoad(coarseDisparity, coord / 2, 0).r;
+
+    if (coarseDepth > 0.0) {
+      // Convert depth back to disparity
+      let coarseDisp = i32((params.baseline * params.focalLength) / coarseDepth);
+
+      // Search in narrow range around coarse estimate
+      let range = i32(params.searchRange);
+      searchMin = max(params.minDisparity, coarseDisp - range);
+      searchMax = min(params.maxDisparity, coarseDisp + range);
+    }
+    // If coarse depth invalid, fall back to full range
+  }
+
   // Find best disparity
   var bestDisparity = 0;
   var bestCost = 999999.0;
 
-  for (var d = params.minDisparity; d <= params.maxDisparity; d++) {
+  for (var d = searchMin; d <= searchMax; d++) {
     let rightCoord = coord - vec2<i32>(d, 0);
 
     // Skip if out of bounds
@@ -171,6 +197,66 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
   var depth: f32;
   if (refinedDisparity > 0.5) {
     depth = (params.baseline * params.focalLength) / refinedDisparity;
+    depth = clamp(depth, 0.1, 10.0);
+  } else {
+    depth = 0.0;
+  }
+
+  textureStore(disparityOutput, coord, vec4<f32>(depth));
+}
+
+// Phase 4: Coarse stereo matching at reduced resolution
+// Works on downsampled images for initial disparity estimate
+@compute @workgroup_size(8, 8)
+fn coarseMatch(@builtin(global_invocation_id) global_id: vec3<u32>) {
+  let coord = vec2<i32>(global_id.xy);
+
+  // Coarse resolution (e.g., 1/4 of full)
+  let coarseWidth = params.width / 4u;
+  let coarseHeight = params.height / 4u;
+
+  if (global_id.x >= coarseWidth || global_id.y >= coarseHeight) {
+    return;
+  }
+
+  let halfBlock = 2; // Smaller blocks for coarse matching
+
+  // Skip borders
+  if (coord.x < halfBlock || coord.x >= i32(coarseWidth) - halfBlock ||
+      coord.y < halfBlock || coord.y >= i32(coarseHeight) - halfBlock) {
+    textureStore(disparityOutput, coord, vec4<f32>(0.0));
+    return;
+  }
+
+  // Simple SAD matching at coarse resolution
+  var bestDisparity = 0;
+  var bestCost = 999999.0;
+
+  // Scale disparity range for coarse resolution
+  let coarseMinDisp = params.minDisparity / 4;
+  let coarseMaxDisp = params.maxDisparity / 4;
+
+  for (var d = coarseMinDisp; d <= coarseMaxDisp; d++) {
+    let rightCoord = coord - vec2<i32>(d, 0);
+
+    if (rightCoord.x < halfBlock || rightCoord.x >= i32(coarseWidth) - halfBlock) {
+      continue;
+    }
+
+    let cost = computeSAD(coord, rightCoord, halfBlock);
+
+    if (cost < bestCost) {
+      bestCost = cost;
+      bestDisparity = d;
+    }
+  }
+
+  // Convert to depth and scale back to full resolution
+  var depth: f32;
+  if (bestDisparity > 0) {
+    // Scale disparity back to full resolution
+    let fullResDisparity = f32(bestDisparity * 4);
+    depth = (params.baseline * params.focalLength) / fullResDisparity;
     depth = clamp(depth, 0.1, 10.0);
   } else {
     depth = 0.0;
