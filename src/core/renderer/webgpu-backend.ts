@@ -70,7 +70,7 @@ export class WebGPUBackend implements RenderBackend {
       mipLevelCount: descriptor.mipLevelCount,
     });
 
-    return new WebGPUTexture(gpuTexture, descriptor.width, descriptor.height, descriptor.format as any);
+    return new WebGPUTexture(gpuTexture, descriptor.width, descriptor.height, descriptor.format);
   }
 
   createBuffer(descriptor: BufferDescriptor): RenderBuffer {
@@ -115,11 +115,11 @@ export class WebGPUBackend implements RenderBackend {
     throw new Error('Only compute pipelines supported currently');
   }
 
-  createBindGroupLayout(entries: any[]): RenderBindGroupLayout {
+  createBindGroupLayout(entries: import('./backend').BindGroupLayoutEntry[]): RenderBindGroupLayout {
     if (!this.device) throw new Error('Device not initialized');
 
     const layout = this.device.createBindGroupLayout({ entries });
-    return { _layout: layout };
+    return new WebGPUBindGroupLayout(layout);
   }
 
   createBindGroup(layout: RenderBindGroupLayout, entries: BindGroupEntry[]): RenderBindGroup {
@@ -129,6 +129,7 @@ export class WebGPUBackend implements RenderBackend {
       let resource: GPUBindingResource;
 
       if ('buffer' in entry.resource) {
+        // Buffer resource
         const buffer = entry.resource.buffer as WebGPUBuffer;
         resource = {
           buffer: buffer.buffer,
@@ -136,9 +137,14 @@ export class WebGPUBackend implements RenderBackend {
           size: entry.resource.size,
         };
       } else if (entry.resource instanceof WebGPUTexture) {
+        // Texture resource - unwrap to GPUTexture and create view
         resource = entry.resource.texture.createView();
+      } else if ('native' in entry.resource) {
+        // External texture - unwrap to native GPUExternalTexture
+        resource = entry.resource.native as GPUExternalTexture;
       } else {
-        resource = entry.resource;
+        // Sampler or other resource - use directly
+        resource = entry.resource as GPUBindingResource;
       }
 
       return {
@@ -147,12 +153,13 @@ export class WebGPUBackend implements RenderBackend {
       };
     });
 
+    const gpuLayout = (layout as WebGPUBindGroupLayout).layout;
     const bindGroup = this.device.createBindGroup({
-      layout: (layout as any)._layout,
+      layout: gpuLayout,
       entries: gpuEntries,
     });
 
-    return { _bindGroup: bindGroup };
+    return new WebGPUBindGroup(bindGroup);
   }
 
   createCommandEncoder(label?: string): RenderCommandEncoder {
@@ -193,9 +200,12 @@ export class WebGPUBackend implements RenderBackend {
     );
   }
 
-  importExternalTexture(source: any): any {
+  importExternalTexture(source: VideoFrame | HTMLVideoElement): import('./backend').ExternalTexture {
     if (!this.device) throw new Error('Device not initialized');
-    return this.device.importExternalTexture({ source });
+    const gpuExternalTexture = this.device.importExternalTexture({ source });
+    return {
+      native: gpuExternalTexture,
+    };
   }
 
   supportsFeature(feature: string): boolean {
@@ -239,20 +249,31 @@ export class WebGPUBackend implements RenderBackend {
 }
 
 // Wrapper classes
+class WebGPUBindGroupLayout implements RenderBindGroupLayout {
+  constructor(public readonly layout: GPUBindGroupLayout) {}
+}
+
+class WebGPUBindGroup implements RenderBindGroup {
+  constructor(public readonly bindGroup: GPUBindGroup) {}
+}
+
 class WebGPUTexture implements RenderTexture {
   constructor(
     public texture: GPUTexture,
     public readonly width: number,
     public readonly height: number,
-    public readonly format: any
+    public readonly format: import('./backend').TextureFormat
   ) {}
 
   destroy(): void {
     this.texture.destroy();
   }
 
-  createView(): GPUTextureView {
-    return this.texture.createView();
+  createView(): import('./backend').TextureView {
+    const gpuView = this.texture.createView();
+    return {
+      texture: this,
+    };
   }
 }
 
@@ -353,7 +374,8 @@ class WebGPUComputePass {
   }
 
   setBindGroup(index: number, bindGroup: RenderBindGroup): void {
-    this.pass.setBindGroup(index, (bindGroup as any)._bindGroup);
+    const gpuBindGroup = (bindGroup as WebGPUBindGroup).bindGroup;
+    this.pass.setBindGroup(index, gpuBindGroup);
   }
 
   dispatchWorkgroups(x: number, y = 1, z = 1): void {

@@ -6,6 +6,129 @@
 
 export type BackendType = 'webgpu' | 'webgl2';
 
+/**
+ * Backend initialization configuration
+ */
+export interface BackendConfig {
+  /** Canvas element for rendering */
+  canvas?: HTMLCanvasElement;
+  /** Power preference for GPU selection */
+  powerPreference?: 'low-power' | 'high-performance';
+  /** Enable validation/debug mode */
+  debug?: boolean;
+  /** Additional backend-specific options */
+  [key: string]: unknown;
+}
+
+/**
+ * Texture view (for multi-level textures, array textures, etc.)
+ */
+export interface TextureView {
+  /** Reference to source texture */
+  texture: RenderTexture;
+  /** Base mip level */
+  baseMipLevel?: number;
+  /** Mip level count */
+  mipLevelCount?: number;
+}
+
+/**
+ * External texture (for camera feeds, video, etc.)
+ */
+export interface ExternalTexture {
+  /** Underlying native texture */
+  readonly native: unknown;
+  /** Destroy/release the external texture */
+  destroy?(): void;
+}
+
+/**
+ * Sampler for texture sampling
+ */
+export interface Sampler {
+  /** Magnification filter */
+  magFilter?: 'nearest' | 'linear';
+  /** Minification filter */
+  minFilter?: 'nearest' | 'linear';
+  /** Address mode U */
+  addressModeU?: 'clamp-to-edge' | 'repeat' | 'mirror-repeat';
+  /** Address mode V */
+  addressModeV?: 'clamp-to-edge' | 'repeat' | 'mirror-repeat';
+}
+
+/**
+ * Bind group layout entry
+ */
+export interface BindGroupLayoutEntry {
+  /** Binding index */
+  binding: number;
+  /** Shader stage visibility */
+  visibility: number;
+  /** Resource type */
+  type: 'buffer' | 'texture' | 'sampler' | 'storage-texture';
+  /** Buffer binding layout (if type is 'buffer') */
+  buffer?: {
+    type: 'uniform' | 'storage' | 'read-only-storage';
+  };
+  /** Texture binding layout (if type is 'texture') */
+  texture?: {
+    sampleType?: 'float' | 'sint' | 'uint';
+    viewDimension?: '2d' | '3d' | 'cube';
+  };
+  /** Storage texture binding layout (if type is 'storage-texture') */
+  storageTexture?: {
+    access: 'write-only' | 'read-only';
+    format: TextureFormat;
+  };
+}
+
+/**
+ * Render pass color attachment
+ */
+export interface RenderPassColorAttachment {
+  /** Texture view to render into */
+  view: TextureView | RenderTexture;
+  /** Load operation */
+  loadOp: 'load' | 'clear';
+  /** Store operation */
+  storeOp: 'store' | 'discard';
+  /** Clear color (if loadOp is 'clear') */
+  clearValue?: { r: number; g: number; b: number; a: number };
+}
+
+/**
+ * Render pass descriptor
+ */
+export interface RenderPassDescriptor {
+  /** Optional label */
+  label?: string;
+  /** Color attachments */
+  colorAttachments: RenderPassColorAttachment[];
+  /** Depth/stencil attachment */
+  depthStencilAttachment?: {
+    view: TextureView | RenderTexture;
+    depthLoadOp?: 'load' | 'clear';
+    depthStoreOp?: 'store' | 'discard';
+    depthClearValue?: number;
+  };
+}
+
+/**
+ * Canvas rendering context (WebGPU or WebGL2)
+ */
+export interface CanvasContext {
+  /** Canvas element */
+  readonly canvas: HTMLCanvasElement;
+  /** Configure the context */
+  configure?(config: {
+    device?: unknown;
+    format?: TextureFormat;
+    usage?: number;
+  }): void;
+  /** Get current texture */
+  getCurrentTexture?(): RenderTexture;
+}
+
 export interface TextureDescriptor {
   label?: string;
   width: number;
@@ -85,7 +208,7 @@ export interface RenderTexture {
   destroy(): void;
 
   // WebGPU-specific (for compatibility)
-  createView?(): any;
+  createView?(): TextureView;
 }
 
 /**
@@ -140,7 +263,8 @@ export interface BindGroupEntry {
   resource:
     | { buffer: RenderBuffer; offset?: number; size?: number }
     | RenderTexture
-    | any; // For samplers, external textures, etc.
+    | Sampler
+    | ExternalTexture;
 }
 
 /**
@@ -148,7 +272,7 @@ export interface BindGroupEntry {
  */
 export interface RenderCommandEncoder {
   beginComputePass(label?: string): RenderComputePass;
-  beginRenderPass?(descriptor: any): RenderRenderPass;
+  beginRenderPass?(descriptor: RenderPassDescriptor): RenderRenderPass;
 
   copyBufferToBuffer(
     source: RenderBuffer,
@@ -199,7 +323,7 @@ export interface RenderBackend {
   readonly type: BackendType;
 
   // Initialization
-  initialize(config?: any): Promise<void>;
+  initialize(config?: BackendConfig): Promise<void>;
   destroy(): void;
 
   // Resource creation
@@ -208,7 +332,7 @@ export interface RenderBackend {
   createShader(descriptor: ShaderDescriptor): RenderShader;
   createPipeline(descriptor: PipelineDescriptor): RenderPipeline;
 
-  createBindGroupLayout(entries: any[]): RenderBindGroupLayout;
+  createBindGroupLayout(entries: BindGroupLayoutEntry[]): RenderBindGroupLayout;
   createBindGroup(layout: RenderBindGroupLayout, entries: BindGroupEntry[]): RenderBindGroup;
 
   // Command recording
@@ -225,10 +349,10 @@ export interface RenderBackend {
   ): void;
 
   // External texture import (for camera feed)
-  importExternalTexture?(source: any): any;
+  importExternalTexture?(source: VideoFrame | HTMLVideoElement): ExternalTexture;
 
   // Canvas integration
-  getCanvasContext?(canvas: HTMLCanvasElement): any;
+  getCanvasContext?(canvas: HTMLCanvasElement): CanvasContext;
 
   // Feature detection
   supportsFeature(feature: string): boolean;

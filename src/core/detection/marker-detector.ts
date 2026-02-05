@@ -288,8 +288,14 @@ export class MarkerDetector {
       throw new Error('Detector not initialized');
     }
 
-    const device = this.gpuContext.getDevice();
-    const encoder = device.createCommandEncoder({ label: 'Marker Detection' });
+    try {
+      const device = this.gpuContext.getDevice();
+      if (!device) {
+        console.error('[MarkerDetector] GPU device not available');
+        return [];
+      }
+
+      const encoder = device.createCommandEncoder({ label: 'Marker Detection' });
 
     const width = grayscaleTexture.width;
     const height = grayscaleTexture.height;
@@ -359,9 +365,25 @@ export class MarkerDetector {
       grayscaleTexture
     );
 
-    this.readbackBuffer!.unmap();
+      this.readbackBuffer!.unmap();
 
-    return markers;
+      return markers;
+
+    } catch (error) {
+      console.error('[MarkerDetector] GPU detection error:', error);
+
+      // Ensure buffer is unmapped if it was mapped
+      try {
+        if (this.readbackBuffer) {
+          this.readbackBuffer.unmap();
+        }
+      } catch (unmapError) {
+        // Buffer might not be mapped, ignore
+      }
+
+      // Return empty array on error
+      return [];
+    }
   }
 
   /**

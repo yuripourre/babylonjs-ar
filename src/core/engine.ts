@@ -28,7 +28,7 @@ export interface AREngineConfig {
 
 export interface ARFrame {
   timestamp: number;
-  cameraTexture: GPUTexture;
+  cameraTexture: GPUTexture | GPUExternalTexture;
   grayscaleTexture: GPUTexture;
   width: number;
   height: number;
@@ -312,7 +312,7 @@ export class AREngine {
       // Create AR frame data (use latest data from previous frame)
       const arFrame: ARFrame = {
         timestamp: cameraFrame.timestamp,
-        cameraTexture: externalTexture as any, // External texture
+        cameraTexture: externalTexture, // External texture
         grayscaleTexture: this.grayscaleTexture!,
         width: cameraFrame.width,
         height: cameraFrame.height,

@@ -43,6 +43,13 @@ export { Kabsch, type KabschResult } from './core/tracking/kabsch';
 export { RANSACPose, estimatePoseRANSAC, type RANSACConfig, type RANSACResult } from './core/tracking/ransac-pose';
 export { SubPixelRefine, refineCorners, type SubPixelConfig } from './core/tracking/subpixel-refine';
 
+// Feature matching
+export {
+  FeatureMatcher,
+  type FeatureMatch as FeatureMatchResult,
+  type FeatureMatcherConfig,
+} from './core/matching';
+
 // Math utilities
 export { Matrix4 } from './core/math/matrix';
 export { Vector3 } from './core/math/vector';
@@ -170,5 +177,8 @@ export {
   type ThreeTypes,
 } from './adapters/three/three-ar';
 
+// Constants
+export * from './core/constants';
+
 // Version
-export const VERSION = '0.16.0'; // Critical Bug Fixes: EPnP, Feature Descriptors, SLAM Matching
+export const VERSION = '0.20.0'; // Type Safety: Removed "any" types, added proper interfaces

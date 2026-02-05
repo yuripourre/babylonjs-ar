@@ -210,8 +210,14 @@ export class PlaneDetector {
       throw new Error('Plane detector not initialized');
     }
 
-    const device = this.gpuContext.getDevice();
-    const numPoints = points.length / 4; // vec4 per point
+    try {
+      const device = this.gpuContext.getDevice();
+      if (!device) {
+        console.error('[PlaneDetector] GPU device not available');
+        return [];
+      }
+
+      const numPoints = points.length / 4; // vec4 per point
 
     // Upload point data
     device.queue.writeBuffer(this.pointsBuffer!, 0, points.buffer);
@@ -274,9 +280,25 @@ export class PlaneDetector {
     }
 
     // Update tracking
-    this.updateTracking(detectedPlanes);
+      this.updateTracking(detectedPlanes);
 
-    return Array.from(this.trackedPlanes.values());
+      return Array.from(this.trackedPlanes.values());
+
+    } catch (error) {
+      console.error('[PlaneDetector] GPU detection error:', error);
+
+      // Ensure buffers are unmapped if they were mapped
+      try {
+        if (this.planesReadbackBuffer) {
+          this.planesReadbackBuffer.unmap();
+        }
+      } catch (unmapError) {
+        // Buffer might not be mapped, ignore
+      }
+
+      // Return existing tracked planes on error (graceful degradation)
+      return Array.from(this.trackedPlanes.values());
+    }
   }
 
   /**

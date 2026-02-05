@@ -40,9 +40,12 @@ export class WebGL2Backend implements RenderBackend {
   private computeEmulator: WebGLComputeEmulator | null = null;
 
   // Extensions
-  private extensions = {
-    colorBufferFloat: null as any,
-    textureFloat: null as any,
+  private extensions: {
+    colorBufferFloat: EXT_color_buffer_float | null;
+    textureFloat: OES_texture_float | null;
+  } = {
+    colorBufferFloat: null,
+    textureFloat: null,
   };
 
   // Resource tracking
@@ -275,7 +278,7 @@ export class WebGL2Backend implements RenderBackend {
     return new WebGL2Pipeline(this.gl, program);
   }
 
-  createBindGroupLayout(entries: any[]): RenderBindGroupLayout {
+  createBindGroupLayout(entries: import('./backend').BindGroupLayoutEntry[]): RenderBindGroupLayout {
     // WebGL2 doesn't have bind group layouts (it uses direct uniform/texture bindings)
     // Return a marker object for compatibility
     return { _entries: entries };

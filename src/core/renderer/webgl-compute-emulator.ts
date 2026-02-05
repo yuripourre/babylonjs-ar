@@ -179,7 +179,9 @@ export class WebGLComputeEmulator {
    */
   private getTextureKey(texture: WebGLTexture): string {
     // Use WebGL internal ID (not perfect, but works for caching)
-    return `tex_${(texture as any).__id || Math.random()}`;
+    // TypeScript doesn't know about __id, but it exists in some implementations
+    const textureWithId = texture as unknown as { __id?: number };
+    return `tex_${textureWithId.__id || Math.random()}`;
   }
 
   /**

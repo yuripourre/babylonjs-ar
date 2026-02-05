@@ -222,9 +222,16 @@ export class FeatureDetector {
       throw new Error('Detector not initialized');
     }
 
-    const device = this.gpuContext.getDevice();
-    const width = grayscaleTexture.width;
-    const height = grayscaleTexture.height;
+    try {
+      const device = this.gpuContext.getDevice();
+      if (!device) {
+        console.error('[FeatureDetector] GPU device not available');
+        this.currentKeypoints = [];
+        return [];
+      }
+
+      const width = grayscaleTexture.width;
+      const height = grayscaleTexture.height;
 
     // Step 1: Run FAST detector
     const fastBindGroup = this.fastPipeline.createBindGroup([
@@ -255,14 +262,31 @@ export class FeatureDetector {
     await this.cornersReadbackBuffer!.mapAsync(GPUMapMode.READ);
     const cornersData = new Float32Array(this.cornersReadbackBuffer!.getMappedRange());
 
-    const keypoints = this.extractKeypoints(cornersData, width, height);
-    this.cornersReadbackBuffer!.unmap();
+      const keypoints = this.extractKeypoints(cornersData, width, height);
+      this.cornersReadbackBuffer!.unmap();
 
-    this.currentKeypoints = keypoints;
+      this.currentKeypoints = keypoints;
 
-    console.log(`[FeatureDetector] Detected ${keypoints.length} keypoints`);
+      console.log(`[FeatureDetector] Detected ${keypoints.length} keypoints`);
 
-    return keypoints;
+      return keypoints;
+
+    } catch (error) {
+      console.error('[FeatureDetector] GPU detection error:', error);
+
+      // Ensure buffer is unmapped if it was mapped
+      try {
+        if (this.cornersReadbackBuffer) {
+          this.cornersReadbackBuffer.unmap();
+        }
+      } catch (unmapError) {
+        // Buffer might not be mapped, ignore
+      }
+
+      // Return empty array on error
+      this.currentKeypoints = [];
+      return [];
+    }
   }
 
   /**
