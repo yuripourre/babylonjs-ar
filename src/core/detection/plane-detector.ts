@@ -81,7 +81,7 @@ export class PlaneDetector {
    * Initialize plane detector
    */
   async initialize(width: number, height: number): Promise<void> {
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
 
     // Create pipelines with actual WGSL shaders
     this.normalPipeline = new ComputePipeline(this.gpuContext, {
@@ -176,7 +176,7 @@ export class PlaneDetector {
     const floatView = new Float32Array(data.buffer);
     floatView[2] = 1.0; // depth scale
     data[3] = 3; // kernel size
-    this.gpuContext.writeBuffer(this.normalParamsBuffer!, 0, data);
+    this.gpuContext.device.queue.writeBuffer(this.normalParamsBuffer!, 0, data);
   }
 
   /**
@@ -196,7 +196,7 @@ export class PlaneDetector {
     floatView[6] = 0.8; // earlyTermThreshold: terminate if 80% inliers found
     floatView[7] = 0.0; // padding
 
-    this.gpuContext.writeBuffer(this.ransacParamsBuffer!, 0, data);
+    this.gpuContext.device.queue.writeBuffer(this.ransacParamsBuffer!, 0, data);
   }
 
   /**
@@ -211,7 +211,7 @@ export class PlaneDetector {
     }
 
     try {
-      const device = this.gpuContext.getDevice();
+      const device = this.gpuContext.device;
       if (!device) {
         console.error('[PlaneDetector] GPU device not available');
         return [];

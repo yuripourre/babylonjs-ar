@@ -1,10 +1,69 @@
 /**
  * BabylonJS AR Library
- * High-performance WebGPU AR with marker tracking and plane detection
+ * High-performance WebGPU AR with plugin-based architecture
  */
 
-// Core exports
+// ========================================
+// NEW ARCHITECTURE (Plugin-Based)
+// ========================================
+
+// Core Engine
 export { AREngine, type AREngineConfig, type ARFrame } from './core/engine';
+
+// Error Handling System
+export {
+  ARError,
+  ARErrors,
+  ErrorCodes,
+  ErrorHandler,
+  withErrorHandling,
+} from './core/errors';
+export type {
+  ErrorCode,
+  ErrorContext,
+  RecoverySuggestion,
+} from './core/errors';
+
+// Event System
+export {
+  TypedEventEmitter,
+  EventEmitterWithMiddleware,
+  EventStream,
+  waitForEvent,
+} from './core/events';
+export type {
+  AREvents,
+  EventListener,
+} from './core/events';
+
+// Plugin System
+export {
+  PluginManager,
+  BaseARPlugin,
+  ARPluginDecorator,
+} from './core/plugin-system';
+export type {
+  ARPlugin,
+  ARContext,
+  CameraIntrinsics,
+  HookResult,
+} from './core/plugin-system';
+
+// Official Plugins
+export {
+  MarkerTrackingPlugin,
+  DepthEstimationPlugin,
+  MeshReconstructionPlugin,
+} from './plugins';
+export type {
+  MarkerTrackingConfig,
+  DepthEstimationConfig,
+  MeshReconstructionPluginConfig,
+} from './plugins';
+
+// ========================================
+// CORE INFRASTRUCTURE
+// ========================================
 export { GPUContextManager, type GPUContextConfig } from './core/gpu/gpu-context';
 export {
   ComputePipeline,
@@ -127,7 +186,6 @@ export {
 } from './core/detection/marker-detector';
 export {
   PoseEstimator,
-  type CameraIntrinsics,
   type Pose,
   type PoseEstimatorConfig,
 } from './core/tracking/pose-estimator';
@@ -220,21 +278,13 @@ export { lightingShaders } from './shaders/lighting-shaders';
 
 // Developer Experience
 export {
-  ARBuilder,
-  type ARPreset,
-  type AREventHandlers,
-} from './core/ar-builder';
-export {
   ARDebug,
   createDebugOverlay,
   type DebugConfig,
 } from './utils/ar-debug';
 export {
-  ARError,
-  ARErrors,
   diagnoseEnvironment,
   printDiagnostics,
-  withErrorHandling,
 } from './utils/ar-errors';
 
 // SLAM and VIO
@@ -280,4 +330,4 @@ export {
 export * from './core/constants';
 
 // Version
-export const VERSION = '0.27.0'; // Depth Estimation + Mesh Reconstruction complete
+export const VERSION = '2.0.0'; // Plugin-based architecture with breaking changes

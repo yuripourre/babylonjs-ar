@@ -40,7 +40,7 @@ export class OcclusionHandler {
    * Initialize occlusion handler
    */
   async initialize(width: number, height: number): Promise<void> {
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
 
     this.config.resolution = { width, height };
 
@@ -102,7 +102,7 @@ export class OcclusionHandler {
     data[2] = this.config.depthThreshold;
     data[3] = this.config.blurRadius;
 
-    this.gpuContext.writeBuffer(this.paramsBuffer!, 0, data.buffer);
+    this.gpuContext.device.queue.writeBuffer(this.paramsBuffer!, 0, data.buffer);
   }
 
   /**
@@ -113,7 +113,7 @@ export class OcclusionHandler {
       throw new Error('Occlusion handler not initialized');
     }
 
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
     const encoder = device.createCommandEncoder({ label: 'Occlusion Generation' });
 
     // Pass 1: Generate occlusion from depth

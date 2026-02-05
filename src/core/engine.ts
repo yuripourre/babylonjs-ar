@@ -1,356 +1,289 @@
 /**
- * AR Engine - Main Orchestrator
- * Coordinates camera, GPU processing, tracking, and detection
+ * AR Engine - Plugin-Based Architecture
+ * Main orchestrator using plugin system, events, and proper error handling
  */
 
+import { TypedEventEmitter, type AREvents } from './events';
+import { ARError, ARErrors, ErrorCodes } from './errors';
+import { PluginManager, type ARPlugin, type ARContext } from './plugin-system';
 import { GPUContextManager } from './gpu/gpu-context';
 import { CameraManager, type CameraConfig } from './camera/camera-manager';
 import { ComputePipeline, calculateWorkgroupCount } from './gpu/compute-pipeline';
 import { grayscaleShader } from '../shaders/index';
-import { Tracker, type TrackerConfig, type TrackedMarker } from './tracking/tracker';
-import { PlaneDetector, type PlaneConfig, type DetectedPlane } from './detection/plane-detector';
-import { PointCloudGenerator } from './detection/point-cloud';
-import { PoseEstimator } from './tracking/pose-estimator';
-import { DepthManager, type DepthConfig, type DepthFrame } from './depth/depth-manager';
+import { Logger } from '../utils/logger';
 
-export interface AREngineConfig {
-  camera?: CameraConfig;
-  gpu?: {
-    powerPreference?: 'low-power' | 'high-performance';
-  };
-  tracker?: TrackerConfig;
-  planeDetector?: PlaneConfig;
-  depthEstimation?: DepthConfig;
-  enableMarkerTracking?: boolean;
-  enablePlaneDetection?: boolean;
-  enableDepthEstimation?: boolean;
-}
+const log = Logger.create('AREngine');
 
+/**
+ * AR Frame
+ */
 export interface ARFrame {
   timestamp: number;
   cameraTexture: GPUTexture | GPUExternalTexture;
   grayscaleTexture: GPUTexture;
   width: number;
   height: number;
-  markers?: TrackedMarker[];
-  planes?: DetectedPlane[];
-  depth?: DepthFrame;
+  [key: string]: unknown; // Plugins can extend
 }
 
-export class AREngine {
+/**
+ * AR Engine configuration
+ */
+export interface AREngineConfig {
+  camera?: CameraConfig;
+  gpu?: {
+    powerPreference?: 'low-power' | 'high-performance';
+  };
+}
+
+/**
+ * AR Engine - Main orchestrator
+ *
+ * @example
+ * ```typescript
+ * import { AREngine, MarkerTrackingPlugin, DepthEstimationPlugin } from 'babylonjs-ar';
+ *
+ * const ar = new AREngine()
+ *   .use(new MarkerTrackingPlugin())
+ *   .use(new DepthEstimationPlugin({ quality: 'medium' }));
+ *
+ * ar.on('marker:detected', (marker) => {
+ *   console.log('Marker found:', marker.id);
+ * });
+ *
+ * await ar.initialize();
+ * await ar.start();
+ * ```
+ */
+export class AREngine extends TypedEventEmitter<AREvents> {
   private gpuContext: GPUContextManager;
   private cameraManager: CameraManager;
-  private tracker: Tracker | null = null;
-  private planeDetector: PlaneDetector | null = null;
-  private depthManager: DepthManager | null = null;
-  private pointCloudGenerator: PointCloudGenerator | null = null;
+  private pluginManager: PluginManager;
+
+  private config: AREngineConfig = {};
+  private context?: ARContext;
+
   private isInitialized = false;
   private isRunning = false;
-  private enableMarkerTracking = false;
-  private enablePlaneDetection = false;
-  private enableDepthEstimation = false;
 
   // GPU resources
-  private grayscalePipeline: ComputePipeline | null = null;
-  private grayscaleTexture: GPUTexture | null = null;
-  private grayscaleTextureView: GPUTextureView | null = null; // Cached view
-  private grayscaleBindGroup: GPUBindGroup | null = null;
+  private grayscalePipeline?: ComputePipeline;
+  private grayscaleTexture?: GPUTexture;
+  private grayscaleBindGroup?: GPUBindGroup;
 
   // Frame timing
   private frameCount = 0;
   private lastFrameTime = 0;
   private fps = 0;
+  private animationFrameId?: number;
 
-  // Marker tracking state
-  private latestMarkers: TrackedMarker[] = [];
-  private isTrackingInProgress = false;
-
-  // Plane detection state
-  private latestPlanes: DetectedPlane[] = [];
-  private isPlaneDetectionInProgress = false;
-
-  // Depth estimation state
-  private latestDepth: DepthFrame | null = null;
-  private isDepthEstimationInProgress = false;
-
-  // Frame callback
-  private onFrameCallback: ((frame: ARFrame) => void) | null = null;
+  // Shared state between plugins
+  private sharedState = new Map<string, unknown>();
 
   constructor() {
+    super();
+
     this.gpuContext = new GPUContextManager();
     this.cameraManager = new CameraManager();
+    this.pluginManager = new PluginManager();
+
+    log.info('AREngine created');
   }
 
   /**
-   * Initialize the AR engine
+   * Register a plugin
+   */
+  use(plugin: ARPlugin): this {
+    if (this.isInitialized) {
+      throw new ARError(
+        'Cannot add plugins after initialization',
+        ErrorCodes.INVALID_STATE,
+        {
+          context: { pluginName: plugin.name },
+        }
+      );
+    }
+
+    this.pluginManager.register(plugin);
+    log.info(`Plugin registered: ${plugin.name}`);
+
+    return this;
+  }
+
+  /**
+   * Initialize AR engine
    */
   async initialize(config: AREngineConfig = {}): Promise<void> {
     if (this.isInitialized) {
-      return;
-    }
-
-    console.log('[AREngine] Initializing...');
-
-    // Initialize GPU context
-    await this.gpuContext.initialize({
-      powerPreference: config.gpu?.powerPreference ?? 'high-performance',
-    });
-
-    // Initialize camera
-    await this.cameraManager.initialize(config.camera);
-
-    // Get camera resolution
-    const resolution = this.cameraManager.getResolution();
-    if (!resolution) {
-      throw new Error('Failed to get camera resolution');
-    }
-
-    console.log(`[AREngine] Camera resolution: ${resolution.width}x${resolution.height}`);
-
-    // Initialize GPU pipelines
-    await this.initializePipelines(resolution.width, resolution.height);
-
-    // Initialize tracker if enabled
-    this.enableMarkerTracking = config.enableMarkerTracking ?? false;
-    if (this.enableMarkerTracking) {
-      this.tracker = new Tracker(this.gpuContext, config.tracker);
-      await this.tracker.initialize(resolution.width, resolution.height);
-      console.log('[AREngine] Marker tracking enabled');
-    }
-
-    // Initialize depth estimation if enabled
-    this.enableDepthEstimation = config.enableDepthEstimation ?? false;
-    const intrinsics = PoseEstimator.estimateIntrinsics(
-      resolution.width,
-      resolution.height,
-      60 // Assume 60° FOV
-    );
-
-    if (this.enableDepthEstimation) {
-      this.depthManager = new DepthManager(
-        this.gpuContext,
-        intrinsics,
-        config.depthEstimation ?? { width: resolution.width, height: resolution.height }
+      throw new ARError(
+        'AR engine already initialized',
+        ErrorCodes.ALREADY_INITIALIZED
       );
-      await this.depthManager.initialize();
-      console.log('[AREngine] Depth estimation enabled');
     }
 
-    // Initialize plane detector if enabled
-    this.enablePlaneDetection = config.enablePlaneDetection ?? false;
-    if (this.enablePlaneDetection) {
-      this.planeDetector = new PlaneDetector(this.gpuContext, config.planeDetector);
-      await this.planeDetector.initialize(resolution.width, resolution.height);
+    this.config = config;
 
-      // Create point cloud generator
-      this.pointCloudGenerator = new PointCloudGenerator(intrinsics);
+    try {
+      log.info('Initializing AR engine...');
 
-      console.log('[AREngine] Plane detection enabled');
+      // Check WebGPU support
+      if (!navigator.gpu) {
+        throw ARErrors.webGPUUnavailable();
+      }
+
+      // Initialize GPU context
+      await this.gpuContext.initialize({
+        powerPreference: config.gpu?.powerPreference ?? 'high-performance',
+      });
+
+      log.info('GPU context initialized');
+
+      // Initialize camera
+      await this.cameraManager.initialize(config.camera);
+      log.info('Camera initialized');
+
+      // Setup grayscale pipeline
+      await this.setupGrayscalePipeline();
+      log.info('Grayscale pipeline created');
+
+      // Create AR context for plugins
+      const resolution = this.cameraManager.getResolution();
+      if (!resolution) {
+        throw new ARError('Failed to get camera resolution', ErrorCodes.INITIALIZATION_FAILED);
+      }
+
+      this.context = {
+        gpu: this.gpuContext.device,
+        gpuContext: this.gpuContext,
+        camera: {
+          getFrame: async () => {
+            const frame = this.cameraManager.getCurrentFrame();
+            if (!frame) {
+              throw new ARError('No camera frame available', ErrorCodes.INITIALIZATION_FAILED);
+            }
+            return frame.videoFrame;
+          },
+          getIntrinsics: () => ({
+            fx: 500,
+            fy: 500,
+            cx: resolution.width / 2,
+            cy: resolution.height / 2,
+            width: resolution.width,
+            height: resolution.height,
+          }),
+        },
+        events: this,
+        config: this.config as Record<string, unknown>,
+        state: this.sharedState,
+      };
+
+      // Initialize all plugins
+      await this.pluginManager.initialize(this.context!);
+      log.info('Plugins initialized', {
+        count: this.pluginManager.getStats().totalPlugins,
+      });
+
+      this.isInitialized = true;
+      this.emit('ready');
+
+      log.info('AR engine initialized successfully');
+    } catch (error) {
+      const arError = error instanceof ARError
+        ? error
+        : new ARError(
+            'Initialization failed',
+            ErrorCodes.INITIALIZATION_FAILED,
+            { cause: error instanceof Error ? error : undefined }
+          );
+
+      this.emit('error', arError);
+      throw arError;
     }
-
-    this.isInitialized = true;
-    console.log('[AREngine] Initialized successfully');
   }
 
   /**
-   * Initialize compute pipelines
+   * Start AR processing
    */
-  private async initializePipelines(width: number, height: number): Promise<void> {
-    const device = this.gpuContext.getDevice();
-
-    // Create grayscale pipeline
-    this.grayscalePipeline = new ComputePipeline(this.gpuContext, {
-      label: 'Grayscale',
-      shaderCode: grayscaleShader,
-      entryPoint: 'main',
-    });
-
-    // Create grayscale output texture
-    this.grayscaleTexture = device.createTexture({
-      label: 'Grayscale Output',
-      size: { width, height },
-      format: 'r8unorm',
-      usage:
-        GPUTextureUsage.STORAGE_BINDING |
-        GPUTextureUsage.TEXTURE_BINDING |
-        GPUTextureUsage.COPY_SRC,
-    });
-
-    // Cache texture view for reuse
-    this.grayscaleTextureView = this.grayscaleTexture.createView();
-
-    console.log('[AREngine] Pipelines initialized');
-  }
-
-  /**
-   * Start the AR processing loop
-   */
-  start(onFrame?: (frame: ARFrame) => void): void {
+  async start(): Promise<void> {
     if (!this.isInitialized) {
-      throw new Error('Engine not initialized. Call initialize() first.');
+      throw ARErrors.notInitialized('AREngine');
     }
 
     if (this.isRunning) {
+      log.warn('AR engine already running');
       return;
     }
 
-    this.onFrameCallback = onFrame ?? null;
-    this.isRunning = true;
-    this.lastFrameTime = performance.now();
+    log.info('Starting AR engine');
 
-    console.log('[AREngine] Starting...');
+    this.isRunning = true;
+    this.emit('start');
+
+    // Start frame loop
     this.processFrame();
   }
 
   /**
-   * Stop the AR processing loop
+   * Stop AR processing
    */
   stop(): void {
-    this.isRunning = false;
-    console.log('[AREngine] Stopped');
-  }
-
-  /**
-   * Main frame processing loop
-   */
-  private processFrame = (): void => {
     if (!this.isRunning) {
       return;
     }
 
-    // Get camera frame
-    const cameraFrame = this.cameraManager.getCurrentFrame();
-    if (!cameraFrame) {
-      requestAnimationFrame(this.processFrame);
-      return;
+    log.info('Stopping AR engine');
+
+    this.isRunning = false;
+
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = undefined;
     }
 
-    const device = this.gpuContext.getDevice();
-
-    try {
-      // Import VideoFrame as external texture (zero-copy)
-      const externalTexture = device.importExternalTexture({
-        source: cameraFrame.videoFrame,
-      });
-
-      // Create bind group for grayscale conversion (if not exists)
-      if (!this.grayscaleBindGroup && this.grayscalePipeline && this.grayscaleTexture) {
-        this.grayscaleBindGroup = this.grayscalePipeline.createBindGroup(
-          [
-            { binding: 0, resource: externalTexture },
-            { binding: 1, resource: this.grayscaleTexture.createView() },
-          ],
-          'Grayscale Bind Group'
-        );
-      }
-
-      // Execute grayscale conversion
-      if (this.grayscalePipeline && this.grayscaleBindGroup && this.grayscaleTexture) {
-        const workgroupCount = calculateWorkgroupCount(
-          cameraFrame.width,
-          cameraFrame.height,
-          { x: 16, y: 16 }
-        );
-
-        // Need to recreate bind group each frame for external texture
-        // But use cached texture view for better performance
-        const bindGroup = this.grayscalePipeline.createBindGroup([
-          { binding: 0, resource: externalTexture },
-          { binding: 1, resource: this.grayscaleTextureView! },
-        ]);
-
-        this.grayscalePipeline.executeAndSubmit(bindGroup, workgroupCount);
-      }
-
-      // Track markers asynchronously (non-blocking)
-      if (this.enableMarkerTracking && this.tracker && this.grayscaleTexture && !this.isTrackingInProgress) {
-        this.isTrackingInProgress = true;
-        // Run tracking in background without blocking frame loop
-        this.tracker.track(this.grayscaleTexture).then(markers => {
-          this.latestMarkers = markers;
-          this.isTrackingInProgress = false;
-        }).catch(error => {
-          console.error('[AREngine] Tracking error:', error);
-          this.isTrackingInProgress = false;
-        });
-      }
-
-      // Depth estimation asynchronously (non-blocking)
-      if (this.enableDepthEstimation && this.depthManager && !this.isDepthEstimationInProgress) {
-        this.isDepthEstimationInProgress = true;
-
-        // Note: Depth estimation from stereo requires two camera views
-        // For monocular depth, we would use ML-based estimation (future)
-        // For now, depth estimation is available but requires stereo setup
-        // this.depthManager.computeMonocularDepth(grayscaleData).then(depthFrame => {
-        //   this.latestDepth = depthFrame;
-        //   this.isDepthEstimationInProgress = false;
-        // }).catch(error => {
-        //   console.error('[AREngine] Depth estimation error:', error);
-        //   this.isDepthEstimationInProgress = false;
-        // });
-        this.isDepthEstimationInProgress = false; // Disable until stereo/ML integration
-      }
-
-      // Detect planes asynchronously (non-blocking)
-      if (this.enablePlaneDetection && this.planeDetector && this.pointCloudGenerator && this.latestDepth && !this.isPlaneDetectionInProgress) {
-        this.isPlaneDetectionInProgress = true;
-
-        // Use depth data to generate point cloud and detect planes
-        const depthFrame = this.latestDepth;
-
-        // Plane detection uses point cloud and normals from depth
-        this.planeDetector.detectPlanes(depthFrame.pointCloud, depthFrame.normals).then(planes => {
-          this.latestPlanes = planes;
-          this.isPlaneDetectionInProgress = false;
-        }).catch(error => {
-          console.error('[AREngine] Plane detection error:', error);
-          this.isPlaneDetectionInProgress = false;
-        });
-      }
-
-      // Create AR frame data (use latest data from previous frame)
-      const arFrame: ARFrame = {
-        timestamp: cameraFrame.timestamp,
-        cameraTexture: externalTexture, // External texture
-        grayscaleTexture: this.grayscaleTexture!,
-        width: cameraFrame.width,
-        height: cameraFrame.height,
-        markers: this.enableMarkerTracking ? this.latestMarkers : undefined,
-        planes: this.enablePlaneDetection ? this.latestPlanes : undefined,
-        depth: this.enableDepthEstimation ? this.latestDepth ?? undefined : undefined,
-      };
-
-      // Invoke callback
-      if (this.onFrameCallback) {
-        this.onFrameCallback(arFrame);
-      }
-
-      // Update FPS
-      this.updateFPS();
-    } finally {
-      // Clean up VideoFrame
-      cameraFrame.videoFrame.close();
-    }
-
-    // Continue loop
-    requestAnimationFrame(this.processFrame);
-  };
+    this.emit('stop');
+  }
 
   /**
-   * Update FPS counter
+   * Destroy AR engine and cleanup resources
    */
-  private updateFPS(): void {
-    this.frameCount++;
-    const now = performance.now();
-    const elapsed = now - this.lastFrameTime;
+  async destroy(): Promise<void> {
+    log.info('Destroying AR engine');
 
-    if (elapsed >= 1000) {
-      this.fps = Math.round((this.frameCount * 1000) / elapsed);
-      console.log(`[AREngine] FPS: ${this.fps}`);
-      this.frameCount = 0;
-      this.lastFrameTime = now;
+    this.stop();
+
+    if (this.context) {
+      await this.pluginManager.destroy(this.context);
     }
+
+    // Cleanup GPU resources
+    this.grayscaleTexture?.destroy();
+    // Note: ComputePipeline doesn't need explicit cleanup
+
+    this.isInitialized = false;
+    this.emit('destroy');
+
+    log.info('AR engine destroyed');
+  }
+
+  /**
+   * Get plugin by name
+   */
+  getPlugin<T extends ARPlugin>(name: string): T | undefined {
+    return this.pluginManager.get(name) as T | undefined;
+  }
+
+  /**
+   * Check if engine is initialized
+   */
+  get initialized(): boolean {
+    return this.isInitialized;
+  }
+
+  /**
+   * Check if engine is running
+   */
+  get running(): boolean {
+    return this.isRunning;
   }
 
   /**
@@ -361,84 +294,178 @@ export class AREngine {
   }
 
   /**
-   * Get GPU context
+   * Get engine statistics
    */
-  getGPUContext(): GPUContextManager {
-    return this.gpuContext;
+  getStats() {
+    return {
+      isInitialized: this.isInitialized,
+      isRunning: this.isRunning,
+      fps: this.fps,
+      frameCount: this.frameCount,
+      plugins: this.pluginManager.getStats(),
+    };
   }
 
   /**
-   * Get backend type (webgpu or webgl2)
+   * Main frame processing loop
    */
-  getBackendType(): 'webgpu' | 'webgl2' {
-    return this.gpuContext.getBackendType();
-  }
-
-  /**
-   * Get camera manager
-   */
-  getCameraManager(): CameraManager {
-    return this.cameraManager;
-  }
-
-  /**
-   * Get tracker
-   */
-  getTracker(): Tracker | null {
-    return this.tracker;
-  }
-
-  /**
-   * Get plane detector
-   */
-  getPlaneDetector(): PlaneDetector | null {
-    return this.planeDetector;
-  }
-
-  /**
-   * Get depth manager
-   */
-  getDepthManager(): DepthManager | null {
-    return this.depthManager;
-  }
-
-  /**
-   * Get point cloud generator
-   */
-  getPointCloudGenerator(): PointCloudGenerator | null {
-    return this.pointCloudGenerator;
-  }
-
-  /**
-   * Clean up resources
-   */
-  destroy(): void {
-    this.stop();
-
-    if (this.grayscaleTexture) {
-      this.grayscaleTexture.destroy();
-      this.grayscaleTexture = null;
+  private processFrame = async (): Promise<void> => {
+    if (!this.isRunning || !this.context) {
+      return;
     }
 
-    if (this.tracker) {
-      this.tracker.destroy();
-      this.tracker = null;
+    const timestamp = performance.now();
+
+    this.emit('frame:before', timestamp);
+
+    try {
+      // Get camera frame
+      const cameraFrame = this.cameraManager.getCurrentFrame();
+      if (!cameraFrame) {
+        this.animationFrameId = requestAnimationFrame(this.processFrame);
+        return;
+      }
+
+      // Import video frame to GPU
+      const cameraTexture = await this.gpuContext.importVideoFrame(cameraFrame.videoFrame);
+
+      // Convert to grayscale
+      const grayscaleTexture = await this.convertToGrayscale(cameraTexture);
+
+      const resolution = this.cameraManager.getResolution()!;
+
+      // Create AR frame
+      const frame: ARFrame = {
+        timestamp,
+        cameraTexture,
+        grayscaleTexture,
+        width: resolution.width,
+        height: resolution.height,
+      };
+
+      // Process frame through all plugins
+      await this.pluginManager.processFrame(frame, this.context);
+
+      // Emit frame event
+      this.emit('frame', frame);
+      this.emit('frame:after', frame);
+
+      // Update FPS
+      this.updateFPS(timestamp);
+    } catch (error) {
+      log.error('Error processing frame:', error);
+
+      const arError = error instanceof ARError
+        ? error
+        : new ARError(
+            'Frame processing failed',
+            ErrorCodes.INITIALIZATION_FAILED,
+            { cause: error instanceof Error ? error : undefined }
+          );
+
+      this.emit('error', arError);
     }
 
-    if (this.planeDetector) {
-      this.planeDetector.destroy();
-      this.planeDetector = null;
+    // Continue loop
+    this.animationFrameId = requestAnimationFrame(this.processFrame);
+  };
+
+  /**
+   * Setup grayscale conversion pipeline
+   */
+  private async setupGrayscalePipeline(): Promise<void> {
+    const device = this.gpuContext.device;
+    const resolution = this.cameraManager.getResolution();
+    if (!resolution) {
+      throw new ARError('Failed to get camera resolution', ErrorCodes.INITIALIZATION_FAILED);
+    }
+    const { width, height } = resolution;
+
+    // Create grayscale texture
+    this.grayscaleTexture = device.createTexture({
+      size: [width, height, 1],
+      format: 'r8unorm',
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+    });
+
+    // Create compute pipeline
+    this.grayscalePipeline = new ComputePipeline(
+      this.gpuContext,
+      {
+        shaderCode: grayscaleShader,
+        entryPoint: 'grayscale',
+        label: 'Grayscale Conversion',
+      }
+    );
+
+    log.debug('Grayscale pipeline created');
+  }
+
+  /**
+   * Convert camera texture to grayscale
+   */
+  private async convertToGrayscale(
+    cameraTexture: GPUTexture | GPUExternalTexture
+  ): Promise<GPUTexture> {
+    if (!this.grayscalePipeline || !this.grayscaleTexture) {
+      throw new ARError(
+        'Grayscale pipeline not initialized',
+        ErrorCodes.NOT_INITIALIZED
+      );
     }
 
-    if (this.depthManager) {
-      this.depthManager.destroy();
-      this.depthManager = null;
+    const device = this.gpuContext.device;
+    const resolution = this.cameraManager.getResolution()!;
+    const { width, height } = resolution;
+
+    // Create/update bind group
+    if (!this.grayscaleBindGroup) {
+      this.grayscaleBindGroup = device.createBindGroup({
+        layout: this.grayscalePipeline.getBindGroupLayout(),
+        entries: [
+          {
+            binding: 0,
+            resource:
+              'importExternalTexture' in device
+                ? (device as any).importExternalTexture({ source: cameraTexture })
+                : (cameraTexture as GPUTexture).createView(),
+          },
+          {
+            binding: 1,
+            resource: this.grayscaleTexture.createView(),
+          },
+        ],
+      });
     }
 
-    this.cameraManager.destroy();
-    this.gpuContext.destroy();
+    // Dispatch compute shader
+    const commandEncoder = device.createCommandEncoder();
+    const passEncoder = commandEncoder.beginComputePass();
 
-    this.isInitialized = false;
-    console.log('[AREngine] Destroyed');
+    passEncoder.setPipeline(this.grayscalePipeline.getPipeline());
+    passEncoder.setBindGroup(0, this.grayscaleBindGroup);
+    const workgroups = calculateWorkgroupCount(width, height, { x: 8, y: 8 });
+    passEncoder.dispatchWorkgroups(workgroups.x, workgroups.y, 1);
+
+    passEncoder.end();
+    device.queue.submit([commandEncoder.finish()]);
+
+    return this.grayscaleTexture;
+  }
+
+  /**
+   * Update FPS calculation
+   */
+  private updateFPS(timestamp: number): void {
+    this.frameCount++;
+
+    const elapsed = timestamp - this.lastFrameTime;
+    if (elapsed >= 1000) {
+      this.fps = Math.round((this.frameCount * 1000) / elapsed);
+      this.frameCount = 0;
+      this.lastFrameTime = timestamp;
+
+      this.emit('fps:change', this.fps);
+    }
   }
 }

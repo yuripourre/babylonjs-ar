@@ -1,47 +1,47 @@
 /**
  * React Hooks for AR Engine
- * Easy integration with React applications
+ * Easy integration with React applications (V2 - Plugin-based)
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { ARBuilder, type ARPreset, type AREventHandlers } from '../../core/ar-builder';
-import type { AREngine, ARFrame } from '../../core/engine';
-import type { DetectedMarker } from '../../core/detection/marker-detector';
+import { AREngine, type AREngineConfig, type ARFrame } from '../../core/engine';
+import { MarkerTrackingPlugin, type MarkerTrackingConfig } from '../../plugins/marker-tracking-plugin';
+import { type TrackedMarker } from '../../core/tracking/tracker';
 import type { DetectedPlane } from '../../core/detection/plane-detector';
+import type { ARError } from '../../core/errors';
 
 export interface UseAROptions {
-  preset?: ARPreset;
-  markers?: boolean;
-  planes?: boolean;
+  arConfig?: AREngineConfig;
+  markerTracking?: MarkerTrackingConfig;
+  planeDetection?: boolean;
   autoStart?: boolean;
-  onFrame?: (frame: ARFrame) => void;
-  onMarkerDetected?: (marker: DetectedMarker) => void;
-  onPlaneDetected?: (plane: DetectedPlane) => void;
-  onError?: (error: Error) => void;
+  onFrame?: (frame: any) => void;
+  onMarkerDetected?: (marker: any) => void;
+  onPlaneDetected?: (plane: any) => void;
+  onError?: (error: ARError) => void;
 }
 
 export interface UseARResult {
   engine: AREngine | null;
   isInitialized: boolean;
   isRunning: boolean;
-  error: Error | null;
+  error: ARError | null;
   fps: number;
-  markers: DetectedMarker[];
-  planes: DetectedPlane[];
-  start: () => void;
+  markers: any[];
+  planes: any[];
+  start: () => Promise<void>;
   stop: () => void;
   restart: () => Promise<void>;
 }
 
 /**
- * React hook for AR Engine
+ * React hook for AR Engine (V2 - Plugin-based)
  *
  * @example
  * ```tsx
  * function ARComponent() {
  *   const { isInitialized, markers, fps } = useAR({
- *     preset: 'mobile',
- *     markers: true,
+ *     markerTracking: { dictionary: 'ARUCO_4X4_50' },
  *     onMarkerDetected: (marker) => console.log('Found:', marker.id)
  *   });
  *
@@ -58,14 +58,10 @@ export function useAR(options: UseAROptions = {}): UseARResult {
   const engineRef = useRef<AREngine | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
+  const [error, setError] = useState<ARError | null>(null);
   const [fps, setFPS] = useState(0);
-  const [markers, setMarkers] = useState<DetectedMarker[]>([]);
+  const [markers, setMarkers] = useState<TrackedMarker[]>([]);
   const [planes, setPlanes] = useState<DetectedPlane[]>([]);
-
-  // Track FPS
-  const frameCountRef = useRef(0);
-  const lastFPSUpdateRef = useRef(performance.now());
 
   // Initialize engine
   useEffect(() => {
@@ -73,46 +69,25 @@ export function useAR(options: UseAROptions = {}): UseARResult {
 
     async function init() {
       try {
-        const builder = ARBuilder.preset(options.preset || 'desktop');
+        // Create AR engine
+        const engine = new AREngine();
 
-        if (options.markers) builder.enableMarkers();
-        if (options.planes) builder.enablePlanes();
-
-        if (options.onMarkerDetected) {
-          builder.onMarkerDetected(options.onMarkerDetected);
+        // Add plugins
+        if (options.markerTracking) {
+          engine.use(new MarkerTrackingPlugin(options.markerTracking));
         }
 
-        if (options.onPlaneDetected) {
-          builder.onPlaneDetected(options.onPlaneDetected);
-        }
-
-        if (options.onError) {
-          builder.onError(options.onError);
-        }
-
-        builder.onFrame((frame) => {
+        // Setup event listeners
+        engine.on('frame', (frame) => {
           if (!mounted) return;
 
-          // Update FPS
-          frameCountRef.current++;
-          const now = performance.now();
-          if (now - lastFPSUpdateRef.current >= 1000) {
-            const currentFPS = Math.round(
-              (frameCountRef.current * 1000) / (now - lastFPSUpdateRef.current)
-            );
-            setFPS(currentFPS);
-            frameCountRef.current = 0;
-            lastFPSUpdateRef.current = now;
-          }
-
           // Update markers and planes
-          // TrackedMarker doesn't have marker property, skip for now
-          // TODO: Update ARFrame to include DetectedMarker array
           if (frame.markers) {
-            // Can't convert TrackedMarker to DetectedMarker without corners
-            // setMarkers(frame.markers as any);
+            setMarkers(frame.markers as TrackedMarker[]);
           }
-          if (frame.planes) setPlanes(frame.planes);
+          if (frame.planes) {
+            setPlanes(frame.planes as DetectedPlane[]);
+          }
 
           // Call user callback
           if (options.onFrame) {
@@ -120,22 +95,51 @@ export function useAR(options: UseAROptions = {}): UseARResult {
           }
         });
 
-        if (options.autoStart !== false) {
-          builder.autoStart(true);
+        engine.on('fps:change', (newFps) => {
+          if (!mounted) return;
+          setFPS(newFps);
+        });
+
+        if (options.onMarkerDetected) {
+          engine.on('marker:detected', (marker) => {
+            if (!mounted) return;
+            options.onMarkerDetected!(marker);
+          });
         }
 
-        const engine = await builder.build();
+        if (options.onPlaneDetected) {
+          engine.on('plane:detected', (plane) => {
+            if (!mounted) return;
+            options.onPlaneDetected!(plane);
+          });
+        }
+
+        engine.on('error', (err) => {
+          if (!mounted) return;
+          setError(err);
+          if (options.onError) {
+            options.onError(err);
+          }
+        });
+
+        // Initialize
+        await engine.initialize(options.arConfig);
 
         if (mounted) {
           engineRef.current = engine;
           setIsInitialized(true);
-          setIsRunning(options.autoStart !== false);
+
+          // Auto-start if requested
+          if (options.autoStart !== false) {
+            await engine.start();
+            setIsRunning(true);
+          }
         }
       } catch (err) {
         if (mounted) {
-          setError(err as Error);
+          setError(err as ARError);
           if (options.onError) {
-            options.onError(err as Error);
+            options.onError(err as ARError);
           }
         }
       }
@@ -153,16 +157,12 @@ export function useAR(options: UseAROptions = {}): UseARResult {
     };
   }, []);
 
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
     if (engineRef.current && !isRunning) {
-      engineRef.current.start((frame) => {
-        if (options.onFrame) {
-          options.onFrame(frame);
-        }
-      });
+      await engineRef.current.start();
       setIsRunning(true);
     }
-  }, [isRunning, options]);
+  }, [isRunning]);
 
   const stop = useCallback(() => {
     if (engineRef.current && isRunning) {
@@ -173,14 +173,14 @@ export function useAR(options: UseAROptions = {}): UseARResult {
 
   const restart = useCallback(async () => {
     if (engineRef.current) {
-      engineRef.current.destroy();
+      await engineRef.current.destroy();
     }
     setIsInitialized(false);
     setIsRunning(false);
     setError(null);
-
-    // Re-initialize (trigger useEffect)
-    // In practice, you'd need a state toggle here
+    setMarkers([]);
+    setPlanes([]);
+    // Note: Re-initialization would need a state toggle
   }, []);
 
   return {
@@ -201,27 +201,36 @@ export function useAR(options: UseAROptions = {}): UseARResult {
  * Hook for marker tracking only
  */
 export function useMarkerTracking(options: {
-  preset?: ARPreset;
-  onMarkerDetected?: (marker: DetectedMarker) => void;
+  markerConfig?: MarkerTrackingConfig;
+  onMarkerDetected?: (marker: any) => void;
   onMarkerLost?: (markerId: number) => void;
 } = {}) {
-  return useAR({
-    ...options,
-    markers: true,
-    planes: false,
+  const ar = useAR({
+    markerTracking: options.markerConfig || {},
+    onMarkerDetected: options.onMarkerDetected,
   });
+
+  // Setup marker lost listener
+  useEffect(() => {
+    if (ar.engine && options.onMarkerLost) {
+      ar.engine.on('marker:lost', options.onMarkerLost);
+      return () => {
+        ar.engine?.off('marker:lost', options.onMarkerLost!);
+      };
+    }
+  }, [ar.engine, options.onMarkerLost]);
+
+  return ar;
 }
 
 /**
  * Hook for plane detection only
  */
 export function usePlaneDetection(options: {
-  preset?: ARPreset;
-  onPlaneDetected?: (plane: DetectedPlane) => void;
+  onPlaneDetected?: (plane: any) => void;
 } = {}) {
   return useAR({
-    ...options,
-    markers: false,
-    planes: true,
+    planeDetection: true,
+    onPlaneDetected: options.onPlaneDetected,
   });
 }

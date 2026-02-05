@@ -65,7 +65,7 @@ export class LightEstimator {
    * Initialize light estimator
    */
   async initialize(): Promise<void> {
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
 
     // Load SH shader
     const shShader = await this.loadShader();
@@ -149,7 +149,7 @@ export class LightEstimator {
       throw new Error('Light estimator not initialized');
     }
 
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
 
     // Update params
     const params = new Uint32Array(4);

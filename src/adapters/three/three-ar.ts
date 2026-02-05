@@ -5,9 +5,9 @@
  * Compatible with Three.js r150+
  */
 
-import { AREngine, type ARFrame } from '../../core/engine';
-import { ARBuilder, type ARPreset } from '../../core/ar-builder';
-import type { DetectedMarker } from '../../core/detection/marker-detector';
+import { AREngine, type ARFrame, type AREngineConfig } from '../../core/engine';
+import { MarkerTrackingPlugin } from '../../plugins/marker-tracking-plugin';
+import { type TrackedMarker } from '../../core/tracking/tracker';
 import type { DetectedPlane } from '../../core/detection/plane-detector';
 import type { Pose } from '../../core/tracking/pose-estimator';
 
@@ -31,13 +31,17 @@ export interface ThreeTypes {
 }
 
 export interface ThreeARConfig {
-  preset?: ARPreset;
+  arConfig?: AREngineConfig;
   canvas?: HTMLCanvasElement;
   enableMarkers?: boolean;
   enablePlanes?: boolean;
+  markerConfig?: {
+    dictionary?: 'ARUCO_4X4_50' | 'ARUCO_5X5_100' | 'ARUCO_6X6_250';
+    markerSize?: number;
+  };
   onReady?: () => void;
-  onMarkerDetected?: (marker: DetectedMarker, anchor: any) => void;
-  onPlaneDetected?: (plane: DetectedPlane, anchor: any) => void;
+  onMarkerDetected?: (marker: any, anchor: any) => void;
+  onPlaneDetected?: (plane: any, anchor: any) => void;
   THREE: ThreeTypes; // Three.js library object
 }
 
@@ -129,23 +133,46 @@ export class ThreeAR {
    * Start AR session
    */
   async start(): Promise<void> {
-    // Build AR engine
-    const builder = ARBuilder.preset(this.config.preset || 'desktop');
+    // Create AR engine with plugins
+    this.arEngine = new AREngine();
 
+    // Add marker tracking plugin if enabled
     if (this.config.enableMarkers) {
-      builder.enableMarkers();
+      this.arEngine.use(new MarkerTrackingPlugin(this.config.markerConfig || {}));
     }
 
-    if (this.config.enablePlanes) {
-      builder.enablePlanes();
+    // Setup event listeners
+    this.arEngine.on('frame', (frame) => this.onARFrame(frame as any));
+
+    if (this.config.enableMarkers && this.config.onMarkerDetected) {
+      this.arEngine.on('marker:detected', (marker) => {
+        const anchor = this.getOrCreateMarkerAnchor(marker.id);
+        this.config.onMarkerDetected!(marker, anchor);
+      });
     }
 
-    builder.onFrame((frame) => this.onARFrame(frame));
+    if (this.config.enablePlanes && this.config.onPlaneDetected) {
+      this.arEngine.on('plane:detected', (plane: any) => {
+        const planeId = typeof plane.id === 'number' ? plane.id : parseInt(plane.id || '0', 10);
+        const anchor = this.getOrCreatePlaneAnchor(planeId);
+        this.config.onPlaneDetected!(plane, anchor);
+      });
+    }
 
-    this.arEngine = await builder.build();
+    this.arEngine.on('ready', () => {
+      if (this.config.onReady) {
+        this.config.onReady();
+      }
+    });
 
-    // Setup background video texture
-    this.setupBackgroundTexture();
+    // Initialize AR engine
+    await this.arEngine.initialize(this.config.arConfig);
+
+    // Note: Background texture setup removed as new AREngine doesn't expose video element
+    // Users should render AR content directly to their scene
+
+    // Start AR processing
+    await this.arEngine.start();
 
     // Start render loop
     const animate = () => {
@@ -156,110 +183,58 @@ export class ThreeAR {
 
     this.isRunning = true;
     animate();
-
-    if (this.config.onReady) {
-      this.config.onReady();
-    }
   }
 
   /**
-   * Setup background texture for camera feed
+   * Get or create marker anchor
    */
-  private setupBackgroundTexture(): void {
-    // Get video element from camera manager
-    const videoElement = this.arEngine.getCameraManager().getVideoElement();
-    if (!videoElement) return;
+  private getOrCreateMarkerAnchor(markerId: number): any {
+    let anchor = this.markerAnchors.get(markerId);
+    if (!anchor) {
+      anchor = new this.THREE.Group();
+      anchor.name = `Marker_${markerId}`;
+      this.anchorParent.add(anchor);
+      this.markerAnchors.set(markerId, anchor);
+    }
+    return anchor;
+  }
 
-    // Create video texture from camera feed
-    this.backgroundTexture = new this.THREE.VideoTexture(videoElement);
-    this.backgroundTexture.minFilter = this.THREE.LinearFilter;
-    this.backgroundTexture.magFilter = this.THREE.LinearFilter;
-    this.backgroundTexture.format = this.THREE.RGBFormat;
-
-    // Create material for background
-    this.backgroundMaterial = new this.THREE.MeshBasicMaterial({
-      map: this.backgroundTexture,
-      depthTest: false,
-      depthWrite: false,
-    });
-
-    // Get camera resolution for aspect ratio
-    const resolution = this.arEngine.getCameraManager().getResolution();
-    if (!resolution) return;
-
-    const aspectRatio = resolution.width / resolution.height;
-    const planeHeight = 2;
-    const planeWidth = planeHeight * aspectRatio;
-
-    // Create background plane
-    const geometry = new this.THREE.PlaneGeometry(planeWidth, planeHeight);
-    this.backgroundMesh = new this.THREE.Mesh(geometry, this.backgroundMaterial);
-
-    // Position background far from camera
-    this.backgroundMesh.position.z = -10;
-    this.backgroundMesh.scale.y = -1; // Flip vertically to match camera
-
-    // Add to scene (render first)
-    this.backgroundMesh.renderOrder = -1;
-    this.scene.add(this.backgroundMesh);
+  /**
+   * Get or create plane anchor
+   */
+  private getOrCreatePlaneAnchor(planeId: number): any {
+    let anchor = this.planeAnchors.get(planeId);
+    if (!anchor) {
+      anchor = new this.THREE.Group();
+      anchor.name = `Plane_${planeId}`;
+      this.anchorParent.add(anchor);
+      this.planeAnchors.set(planeId, anchor);
+    }
+    return anchor;
   }
 
   /**
    * Handle AR frame
    */
   private onARFrame(frame: ARFrame): void {
-    // Background texture is automatically updated from video element
-    // via VideoTexture
-
-    // Update marker anchors
-    if (frame.markers && this.config.enableMarkers) {
-      this.updateMarkerAnchors(frame.markers);
-    }
-
-    // Update plane anchors
-    if (frame.planes && this.config.enablePlanes) {
-      this.updatePlaneAnchors(frame.planes);
-    }
-  }
-
-  /**
-   * Update marker anchors
-   */
-  private updateMarkerAnchors(markers: any[]): void {
-    const currentMarkerIds = new Set<number>();
-
-    for (const trackedMarker of markers) {
-      const id = trackedMarker.id;
-      currentMarkerIds.add(id);
-
-      let anchor = this.markerAnchors.get(id);
-
-      if (!anchor) {
-        // Create new anchor (Three.js Group)
-        anchor = new this.THREE.Group();
-        anchor.name = `Marker_${id}`;
-        this.anchorParent.add(anchor);
-        this.markerAnchors.set(id, anchor);
-
-        // Notify callback
-        if (this.config.onMarkerDetected) {
-          // Create a DetectedMarker from TrackedMarker
-          const detectedMarker: any = { id };
-          this.config.onMarkerDetected(detectedMarker, anchor);
+    // Frame processing happens via event listeners
+    // Update marker poses if they exist in frame
+    if (frame.markers) {
+      for (const marker of frame.markers as TrackedMarker[]) {
+        const anchor = this.markerAnchors.get(marker.id);
+        if (anchor && marker.pose) {
+          this.updateAnchorFromPose(anchor, marker.pose);
         }
       }
-
-      // Update anchor transform from pose
-      if (trackedMarker.pose) {
-        this.updateAnchorFromPose(anchor, trackedMarker.pose);
-      }
     }
 
-    // Remove lost markers
-    for (const [id, anchor] of this.markerAnchors) {
-      if (!currentMarkerIds.has(id)) {
-        this.anchorParent.remove(anchor);
-        this.markerAnchors.delete(id);
+    // Update plane poses if they exist in frame
+    if (frame.planes) {
+      for (const plane of frame.planes as DetectedPlane[]) {
+        const anchor = this.planeAnchors.get(plane.id || 0);
+        if (anchor) {
+          this.updateAnchorFromPlane(anchor, plane);
+        }
       }
     }
   }

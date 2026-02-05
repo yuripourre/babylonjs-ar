@@ -45,7 +45,7 @@ export class IndirectDispatch {
    * Initialize indirect dispatch buffer
    */
   initialize(): void {
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
 
     // Create indirect buffer (4 x u32)
     this.indirectBuffer = device.createBuffer({
@@ -115,7 +115,7 @@ export class IndirectDispatch {
    * Create pipeline for computing dispatch counts
    */
   async createComputePipeline(shaderCode: string): Promise<void> {
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
 
     const shaderModule = device.createShaderModule({
       label: 'Compute Dispatch Size',
@@ -145,7 +145,7 @@ export class IndirectDispatch {
       throw new Error('Indirect dispatch not initialized');
     }
 
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
 
     // Create params buffer
     const paramsBuffer = device.createBuffer({
@@ -198,7 +198,7 @@ export class IndirectDispatch {
       throw new Error('Indirect dispatch not initialized');
     }
 
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
     const data = new Uint32Array([
       Math.min(x, this.config.maxWorkgroups.x),
       Math.min(y, this.config.maxWorkgroups.y),

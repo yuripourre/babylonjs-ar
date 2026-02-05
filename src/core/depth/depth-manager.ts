@@ -81,7 +81,7 @@ export class DepthManager {
    * Initialize GPU pipelines and buffers
    */
   async initialize(): Promise<void> {
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
     const { width, height } = this.config;
     const pixelCount = width * height;
 
@@ -146,7 +146,7 @@ export class DepthManager {
       throw new Error('DepthManager not initialized');
     }
 
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
     const { width, height } = this.config;
 
     // Upload images to GPU
@@ -250,7 +250,7 @@ export class DepthManager {
    * Readback depth map from GPU to CPU
    */
   private async readbackDepthMap(): Promise<Float32Array> {
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
     const { width, height } = this.config;
     const pixelCount = width * height;
 

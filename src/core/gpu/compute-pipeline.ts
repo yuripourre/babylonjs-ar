@@ -26,7 +26,7 @@ export class ComputePipeline {
     private gpuContext: GPUContextManager,
     config: ComputePipelineConfig
   ) {
-    this.device = gpuContext.getDevice();
+    this.device = gpuContext.device;
 
     // Create shader module
     const shaderModule = this.device.createShaderModule({
@@ -93,7 +93,7 @@ export class ComputePipeline {
     workgroupCount: { x: number; y: number; z?: number }
   ): void {
     const commandBuffer = this.execute(bindGroup, workgroupCount);
-    this.gpuContext.submit([commandBuffer]);
+    this.device.queue.submit([commandBuffer]);
   }
 
   /**

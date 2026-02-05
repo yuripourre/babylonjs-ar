@@ -21,20 +21,24 @@ import {
   StandardMaterial,
   Color4,
 } from '@babylonjs/core';
-import { AREngine, type ARFrame } from '../../core/engine';
-import { ARBuilder, type ARPreset } from '../../core/ar-builder';
-import type { DetectedMarker } from '../../core/detection/marker-detector';
+import { AREngine, type ARFrame, type AREngineConfig } from '../../core/engine';
+import { MarkerTrackingPlugin } from '../../plugins/marker-tracking-plugin';
+import { type TrackedMarker } from '../../core/tracking/tracker';
 import type { DetectedPlane } from '../../core/detection/plane-detector';
 import type { Pose } from '../../core/tracking/pose-estimator';
 
 export interface BabylonARConfig {
-  preset?: ARPreset;
+  arConfig?: AREngineConfig;
   canvas?: HTMLCanvasElement;
   enableMarkers?: boolean;
   enablePlanes?: boolean;
+  markerConfig?: {
+    dictionary?: 'ARUCO_4X4_50' | 'ARUCO_5X5_100' | 'ARUCO_6X6_250';
+    markerSize?: number;
+  };
   onReady?: () => void;
-  onMarkerDetected?: (marker: DetectedMarker, anchor: TransformNode) => void;
-  onPlaneDetected?: (plane: DetectedPlane, anchor: TransformNode) => void;
+  onMarkerDetected?: (marker: any, anchor: TransformNode) => void;
+  onPlaneDetected?: (plane: any, anchor: TransformNode) => void;
 }
 
 /**
@@ -98,23 +102,46 @@ export class BabylonAR {
    * Start AR session
    */
   async start(): Promise<void> {
-    // Build AR engine
-    const builder = ARBuilder.preset(this.config.preset || 'desktop');
+    // Create AR engine with plugins
+    this.arEngine = new AREngine();
 
+    // Add marker tracking plugin if enabled
     if (this.config.enableMarkers) {
-      builder.enableMarkers();
+      this.arEngine.use(new MarkerTrackingPlugin(this.config.markerConfig || {}));
     }
 
-    if (this.config.enablePlanes) {
-      builder.enablePlanes();
+    // Setup event listeners
+    this.arEngine.on('frame', (frame) => this.onARFrame(frame as any));
+
+    if (this.config.enableMarkers && this.config.onMarkerDetected) {
+      this.arEngine.on('marker:detected', (marker) => {
+        const anchor = this.getOrCreateMarkerAnchor(marker.id);
+        this.config.onMarkerDetected!(marker, anchor);
+      });
     }
 
-    builder.onFrame((frame) => this.onARFrame(frame));
+    if (this.config.enablePlanes && this.config.onPlaneDetected) {
+      this.arEngine.on('plane:detected', (plane: any) => {
+        const planeId = typeof plane.id === 'number' ? plane.id : parseInt(plane.id || '0', 10);
+        const anchor = this.getOrCreatePlaneAnchor(planeId);
+        this.config.onPlaneDetected!(plane, anchor);
+      });
+    }
 
-    this.arEngine = await builder.build();
+    this.arEngine.on('ready', () => {
+      if (this.config.onReady) {
+        this.config.onReady();
+      }
+    });
 
-    // Setup background video texture
-    this.setupBackgroundTexture();
+    // Initialize AR engine
+    await this.arEngine.initialize(this.config.arConfig);
+
+    // Note: Background texture setup removed as new AREngine doesn't expose video element
+    // Users should render AR content directly to their scene
+
+    // Start AR processing
+    await this.arEngine.start();
 
     // Start render loop
     this.engine.runRenderLoop(() => {
@@ -122,133 +149,65 @@ export class BabylonAR {
     });
 
     this.isRunning = true;
+  }
 
-    if (this.config.onReady) {
-      this.config.onReady();
+  /**
+   * Get or create marker anchor
+   */
+  private getOrCreateMarkerAnchor(markerId: number): TransformNode {
+    let anchor = this.markerAnchors.get(markerId);
+    if (!anchor) {
+      anchor = new TransformNode(`Marker_${markerId}`, this.scene);
+      anchor.parent = this.anchorParent;
+      this.markerAnchors.set(markerId, anchor);
     }
+    return anchor;
+  }
+
+  /**
+   * Get or create plane anchor
+   */
+  private getOrCreatePlaneAnchor(planeId: number): TransformNode {
+    let anchor = this.planeAnchors.get(planeId);
+    if (!anchor) {
+      anchor = new TransformNode(`Plane_${planeId}`, this.scene);
+      anchor.parent = this.anchorParent;
+      this.planeAnchors.set(planeId, anchor);
+    }
+    return anchor;
   }
 
   /**
    * Process AR frame from image
    */
   async processImage(image: HTMLImageElement | HTMLCanvasElement): Promise<void> {
-    // This would require updating AREngine to support image input
-    // For now, this is a placeholder
-    console.log('Processing image:', image.width, image.height);
-  }
-
-  /**
-   * Setup background texture for camera feed
-   */
-  private setupBackgroundTexture(): void {
-    // Get video element from camera manager
-    const videoElement = this.arEngine.getCameraManager().getVideoElement();
-    if (!videoElement) return;
-
-    // Create video texture from camera feed
-    this.backgroundTexture = new VideoTexture(
-      'backgroundTexture',
-      videoElement,
-      this.scene,
-      false, // Don't generate mip maps
-      false, // Not invertY (we'll flip the plane instead)
-      Texture.TRILINEAR_SAMPLINGMODE,
-      {
-        autoUpdateTexture: true, // Auto-update each frame
-        autoPlay: true,
-      }
-    );
-
-    // Create material for background
-    this.backgroundMaterial = new StandardMaterial('backgroundMaterial', this.scene);
-    this.backgroundMaterial.diffuseTexture = this.backgroundTexture;
-    this.backgroundMaterial.emissiveTexture = this.backgroundTexture; // Make it self-illuminated
-    this.backgroundMaterial.disableLighting = true; // Don't apply scene lighting
-    this.backgroundMaterial.backFaceCulling = false; // Render both sides
-
-    // Create background plane
-    if (!this.backgroundPlane) {
-      // Calculate aspect ratio
-      const resolution = this.arEngine.getCameraManager().getResolution();
-      if (!resolution) return;
-
-      const aspectRatio = resolution.width / resolution.height;
-      const planeHeight = 100;
-      const planeWidth = planeHeight * aspectRatio;
-
-      this.backgroundPlane = MeshBuilder.CreatePlane(
-        'background',
-        { width: planeWidth, height: planeHeight },
-        this.scene
-      );
-
-      this.backgroundPlane.position.z = 50; // Far back in scene
-      this.backgroundPlane.scaling.y = -1; // Flip vertically to match camera
-      this.backgroundPlane.material = this.backgroundMaterial;
-
-      // Make sure background renders behind everything else
-      this.backgroundPlane.renderingGroupId = 0;
-      this.backgroundPlane.isPickable = false; // Don't interfere with raycasting
-    }
+    // Note: New plugin-based AREngine architecture doesn't support direct image input
+    // Use camera-based AR or implement a custom plugin for image processing
+    console.warn('processImage is not supported in V2 architecture. Use camera-based AR instead.');
   }
 
   /**
    * Handle AR frame
    */
   private onARFrame(frame: ARFrame): void {
-    // Background texture is automatically updated from video element
-    // via VideoTexture's autoUpdateTexture setting
-    // No manual copying needed!
-
-    // Update marker anchors
-    if (frame.markers && this.config.enableMarkers) {
-      this.updateMarkerAnchors(frame.markers);
-    }
-
-    // Update plane anchors
-    if (frame.planes && this.config.enablePlanes) {
-      this.updatePlaneAnchors(frame.planes);
-    }
-  }
-
-  /**
-   * Update marker anchors
-   */
-  private updateMarkerAnchors(markers: any[]): void {
-    const currentMarkerIds = new Set<number>();
-
-    for (const trackedMarker of markers) {
-      const id = trackedMarker.id;
-      currentMarkerIds.add(id);
-
-      let anchor = this.markerAnchors.get(id);
-
-      if (!anchor) {
-        // Create new anchor
-        anchor = new TransformNode(`Marker_${id}`, this.scene);
-        anchor.parent = this.anchorParent;
-        this.markerAnchors.set(id, anchor);
-
-        // Notify callback
-        if (this.config.onMarkerDetected) {
-          // Create a DetectedMarker from TrackedMarker
-          // This is a simplified conversion
-          const detectedMarker: any = { id };
-          this.config.onMarkerDetected(detectedMarker, anchor);
+    // Frame processing happens via event listeners
+    // Update marker poses if they exist in frame
+    if (frame.markers) {
+      for (const marker of frame.markers as TrackedMarker[]) {
+        const anchor = this.markerAnchors.get(marker.id);
+        if (anchor && marker.pose) {
+          this.updateAnchorFromPose(anchor, marker.pose);
         }
       }
-
-      // Update anchor transform from pose
-      if (trackedMarker.pose) {
-        this.updateAnchorFromPose(anchor, trackedMarker.pose);
-      }
     }
 
-    // Remove lost markers
-    for (const [id, anchor] of this.markerAnchors) {
-      if (!currentMarkerIds.has(id)) {
-        anchor.dispose();
-        this.markerAnchors.delete(id);
+    // Update plane poses if they exist in frame
+    if (frame.planes) {
+      for (const plane of frame.planes as DetectedPlane[]) {
+        const anchor = this.planeAnchors.get(plane.id || 0);
+        if (anchor) {
+          this.updateAnchorFromPlane(anchor, plane);
+        }
       }
     }
   }

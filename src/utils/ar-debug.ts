@@ -87,13 +87,13 @@ export class ARDebug {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     // Draw markers
-    if (this.config.showMarkers && frame.markers) {
-      this.drawMarkers(frame.markers, frame.width, frame.height);
+    if (this.config.showMarkers && (frame as any).markers) {
+      this.drawMarkers((frame as any).markers || [], frame.width, frame.height);
     }
 
     // Draw planes
-    if (this.config.showPlanes && frame.planes) {
-      this.drawPlanes(frame.planes);
+    if (this.config.showPlanes && (frame as any).planes) {
+      this.drawPlanes((frame as any).planes || []);
     }
 
     // Draw stats overlay
@@ -252,13 +252,15 @@ export class ARDebug {
     this.ctx.fillText(`Frame Time: ${this.frameTime.toFixed(2)}ms`, padding + 5, y);
     y += lineHeight;
 
-    if (frame.markers) {
-      this.ctx.fillText(`Markers: ${frame.markers.length}`, padding + 5, y);
+    const markers = (frame as any).markers;
+    if (markers && Array.isArray(markers)) {
+      this.ctx.fillText(`Markers: ${markers.length}`, padding + 5, y);
       y += lineHeight;
     }
 
-    if (frame.planes) {
-      this.ctx.fillText(`Planes: ${frame.planes.length}`, padding + 5, y);
+    const planes = (frame as any).planes;
+    if (planes && Array.isArray(planes)) {
+      this.ctx.fillText(`Planes: ${planes.length}`, padding + 5, y);
       y += lineHeight;
     }
 

@@ -77,7 +77,7 @@ export class FeatureDetector {
    * Initialize detector
    */
   async initialize(width: number, height: number): Promise<void> {
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
 
     // Create pipelines with actual WGSL shaders
     this.fastPipeline = new ComputePipeline(this.gpuContext, {
@@ -188,7 +188,7 @@ export class FeatureDetector {
       0.0,
       0.0,
     ]);
-    this.gpuContext.writeBuffer(this.fastParamsBuffer!, 0, data);
+    this.gpuContext.device.queue.writeBuffer(this.fastParamsBuffer!, 0, data);
   }
 
   /**
@@ -198,7 +198,7 @@ export class FeatureDetector {
     const data = new Uint32Array(4);
     data[0] = this.currentKeypoints.length;
     data[1] = 31; // Patch size
-    this.gpuContext.writeBuffer(this.orbParamsBuffer!, 0, data);
+    this.gpuContext.device.queue.writeBuffer(this.orbParamsBuffer!, 0, data);
   }
 
   /**
@@ -211,7 +211,7 @@ export class FeatureDetector {
     data[2] = this.config.matchingMaxDistance;
     const floatView = new Float32Array(data.buffer);
     floatView[3] = this.config.matchingRatioThreshold;
-    this.gpuContext.writeBuffer(this.matchingParamsBuffer!, 0, data);
+    this.gpuContext.device.queue.writeBuffer(this.matchingParamsBuffer!, 0, data);
   }
 
   /**
@@ -223,7 +223,7 @@ export class FeatureDetector {
     }
 
     try {
-      const device = this.gpuContext.getDevice();
+      const device = this.gpuContext.device;
       if (!device) {
         console.error('[FeatureDetector] GPU device not available');
         this.currentKeypoints = [];
@@ -354,7 +354,7 @@ export class FeatureDetector {
       return descriptors;
     }
 
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
 
     // Upload keypoints to GPU
     const keypointsData = new Float32Array(keypoints.length * 4);
@@ -418,7 +418,7 @@ export class FeatureDetector {
       return [];
     }
 
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
     const numDesc1 = descriptors1.length / 8;
     const numDesc2 = descriptors2.length / 8;
 

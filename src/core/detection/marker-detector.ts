@@ -89,7 +89,7 @@ export class MarkerDetector {
    * Initialize detector with image dimensions
    */
   async initialize(width: number, height: number): Promise<void> {
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
 
     // Load shaders (these will be imported from the shader index)
     const {
@@ -258,7 +258,7 @@ export class MarkerDetector {
    */
   private updateBlurParams(dirX: number, dirY: number): void {
     const data = new Float32Array([dirX, dirY, 1.0, 0.0]);
-    this.gpuContext.writeBuffer(this.blurParamsBuffer!, 0, data);
+    this.gpuContext.device.queue.writeBuffer(this.blurParamsBuffer!, 0, data);
   }
 
   /**
@@ -269,7 +269,7 @@ export class MarkerDetector {
     data[0] = this.config.adaptiveThresholdBlockSize;
     const floatView = new Float32Array(data.buffer);
     floatView[1] = this.config.adaptiveThresholdConstant;
-    this.gpuContext.writeBuffer(this.thresholdParamsBuffer!, 0, data);
+    this.gpuContext.device.queue.writeBuffer(this.thresholdParamsBuffer!, 0, data);
   }
 
   /**
@@ -277,7 +277,7 @@ export class MarkerDetector {
    */
   private updateCornerParams(): void {
     const data = new Float32Array([0.01, 0.04, 0.0, 0.0]); // threshold, k
-    this.gpuContext.writeBuffer(this.cornerParamsBuffer!, 0, data);
+    this.gpuContext.device.queue.writeBuffer(this.cornerParamsBuffer!, 0, data);
   }
 
   /**
@@ -289,7 +289,7 @@ export class MarkerDetector {
     }
 
     try {
-      const device = this.gpuContext.getDevice();
+      const device = this.gpuContext.device;
       if (!device) {
         console.error('[MarkerDetector] GPU device not available');
         return [];
@@ -434,7 +434,7 @@ export class MarkerDetector {
     quad: Quad,
     grayscaleTexture: GPUTexture
   ): Promise<{ id: number; rotation: 0 | 1 | 2 | 3; hamming: number } | null> {
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
 
     // Warp marker to 32x32 square
     const warpSize = 32;
@@ -541,7 +541,7 @@ export class MarkerDetector {
       throw new Error('GPU batch pipelines not initialized');
     }
 
-    const device = this.gpuContext.getDevice();
+    const device = this.gpuContext.device;
     const batchSize = Math.min(quads.length, this.MAX_BATCH_SIZE);
 
     // Step 1: Upload source points (quad corners)

@@ -3,26 +3,19 @@
  * Tracks and manages lifecycle of GPU resources to prevent memory leaks
  */
 
-import type {
-  RenderTexture,
-  RenderBuffer,
-  RenderShader,
-  RenderPipeline,
-  RenderBindGroup,
-  RenderBindGroupLayout,
-} from '../renderer/backend';
 import { Logger } from '../../utils/logger';
 
 /**
  * Resource types that can be tracked
  */
 export type GPUResource =
-  | RenderTexture
-  | RenderBuffer
-  | RenderShader
-  | RenderPipeline
-  | RenderBindGroup
-  | RenderBindGroupLayout;
+  | GPUTexture
+  | GPUBuffer
+  | GPUShaderModule
+  | GPUComputePipeline
+  | GPURenderPipeline
+  | GPUBindGroup
+  | GPUBindGroupLayout;
 
 /**
  * Resource metadata for tracking
