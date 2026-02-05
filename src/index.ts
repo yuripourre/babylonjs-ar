@@ -53,6 +53,29 @@ export {
   type TrackerConfig,
   type TrackedMarker,
 } from './core/tracking/tracker';
+
+// Natural Image Tracking
+export {
+  NaturalImageTracker,
+  ReferenceImageStore,
+  GeometricVerifier,
+  Matrix3,
+  type TrackedImage,
+  type TrackingConfig,
+  type ReferenceImage,
+  type StoredReferenceImage,
+  type Point2D,
+  type GeometricVerificationResult,
+} from './core/tracking/natural-image';
+
+// Performance Monitoring (Mobile Optimization)
+export {
+  ARPerformanceMonitor,
+  QualityLevel,
+  type PerformanceBudget,
+  type ARQualitySettings,
+} from './core/performance';
+
 export {
   MarkerDetector,
   type MarkerDetectorConfig,
@@ -219,4 +242,4 @@ export {
 export * from './core/constants';
 
 // Version
-export const VERSION = '0.24.0'; // Phase 1: Hit Testing System - Raycasting with XR and CPU fallback
+export const VERSION = '0.26.0'; // Phase 1: Mobile Performance - Adaptive quality and monitoring
