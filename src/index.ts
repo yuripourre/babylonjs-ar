@@ -39,6 +39,14 @@ export {
   type XRViewData,
 } from './core/xr';
 
+// Hit Testing
+export {
+  Ray,
+  RaycasterEngine,
+  type HitTestOptions,
+  type HitTestResult,
+} from './core/hit-test';
+
 // Tracking and detection
 export {
   Tracker,
@@ -211,4 +219,4 @@ export {
 export * from './core/constants';
 
 // Version
-export const VERSION = '0.23.0'; // Phase 1: WebXR Foundation - Session management and hybrid camera
+export const VERSION = '0.24.0'; // Phase 1: Hit Testing System - Raycasting with XR and CPU fallback

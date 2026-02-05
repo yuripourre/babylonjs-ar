@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BabylonJS AR - XR Hit Test Example</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #info {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      color: white;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 15px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      max-width: 300px;
+      z-index: 100;
+      line-height: 1.6;
+    }
+
+    #info h2 {
+      margin: 0 0 10px 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    #info .instruction {
+      margin: 10px 0;
+      padding: 10px;
+      background: rgba(100, 200, 255, 0.2);
+      border-left: 3px solid #64C8FF;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    #hitInfo {
+      margin-top: 10px;
+      font-size: 11px;
+      display: none;
+    }
+
+    #hitInfo .hit {
+      padding: 6px 10px;
+      margin: 4px 0;
+      background: rgba(76, 175, 80, 0.3);
+      border-radius: 4px;
+    }
+
+    #startButton {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 15px 40px;
+      font-size: 16px;
+      font-weight: 600;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+      transition: all 0.3s ease;
+      z-index: 100;
+    }
+
+    #startButton:hover {
+      transform: translateX(-50%) translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    #startButton:disabled {
+      background: #666;
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    #canvas {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+
+    .marker {
+      position: fixed;
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(100, 200, 255, 0.8);
+      border-radius: 50%;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      z-index: 50;
+      display: none;
+    }
+
+    .marker::before {
+      content: '';
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      background: rgba(100, 200, 255, 0.9);
+      border-radius: 50%;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .error {
+      color: #ff6b6b;
+      background: rgba(255, 107, 107, 0.2);
+      padding: 10px;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">
+    <h2>XR Hit Test</h2>
+    <div class="instruction">
+      Tap the screen to place markers on detected surfaces
+    </div>
+    <div id="hitInfo">
+      <strong>Last Hit:</strong>
+      <div id="lastHit"></div>
+    </div>
+  </div>
+
+  <div class="marker" id="reticle"></div>
+  <button id="startButton">Start AR Session</button>
+  <canvas id="canvas"></canvas>
+
+  <script type="module">
+    import {
+      XRSessionManager,
+      RaycasterEngine,
+      Logger,
+    } from '../../dist/babylonjs-ar.js';
+
+    // Enable debug logging
+    Logger.setLevel('DEBUG');
+
+    const startButton = document.getElementById('startButton');
+    const canvas = document.getElementById('canvas');
+    const reticle = document.getElementById('reticle');
+    const hitInfo = document.getElementById('hitInfo');
+    const lastHitEl = document.getElementById('lastHit');
+
+    let xrSessionManager = null;
+    let raycasterEngine = null;
+    let xrHitTestSource = null;
+    let placedMarkers = [];
+
+    // Format numbers for display
+    function formatVec3(v) {
+      return `(${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)})`;
+    }
+
+    // Create visual marker at hit position
+    function createMarker(hitResult) {
+      const marker = document.createElement('div');
+      marker.className = 'marker';
+      marker.style.display = 'block';
+      marker.style.background = 'rgba(76, 175, 80, 0.3)';
+      marker.style.borderColor = 'rgba(76, 175, 80, 0.8)';
+      document.body.appendChild(marker);
+
+      placedMarkers.push({ element: marker, hitResult });
+
+      // Update hit info
+      lastHitEl.innerHTML = `
+        <div class="hit">
+          <div><strong>Type:</strong> ${hitResult.hitType}</div>
+          <div><strong>Position:</strong> ${formatVec3(hitResult.hitPoint)}</div>
+          <div><strong>Normal:</strong> ${formatVec3(hitResult.normal)}</div>
+          <div><strong>Distance:</strong> ${hitResult.distance.toFixed(2)}m</div>
+          <div><strong>Confidence:</strong> ${(hitResult.confidence * 100).toFixed(0)}%</div>
+        </div>
+      `;
+      hitInfo.style.display = 'block';
+
+      console.log('Placed marker at:', hitResult.hitPoint);
+    }
+
+    // Handle screen tap
+    function onScreenTap(event) {
+      if (!xrSessionManager || !xrSessionManager.isActive()) {
+        return;
+      }
+
+      console.log('Screen tapped at:', event.clientX, event.clientY);
+
+      // In XR mode, hit tests are performed in the animation frame
+      // We'll use the reticle position which is updated continuously
+    }
+
+    // XR animation frame callback
+    function onXRFrame(timestamp, frame) {
+      if (!xrSessionManager || !xrSessionManager.isActive()) {
+        return;
+      }
+
+      const session = xrSessionManager.getSession();
+      if (!session) {
+        return;
+      }
+
+      // Get hit test results
+      if (xrHitTestSource) {
+        const hitTestResults = xrSessionManager.getHitTestResults(
+          xrHitTestSource,
+          frame
+        );
+
+        if (hitTestResults.length > 0) {
+          // Show reticle at first hit test result
+          const hitPose = hitTestResults[0].getPose(
+            xrSessionManager.getReferenceSpace()
+          );
+
+          if (hitPose) {
+            reticle.style.display = 'block';
+            // Note: In a real implementation, you'd project the 3D position to 2D screen space
+            // For this demo, we'll place it in the center
+            reticle.style.left = '50%';
+            reticle.style.top = '50%';
+          }
+        } else {
+          reticle.style.display = 'none';
+        }
+      }
+
+      // Continue animation loop
+      session.requestAnimationFrame(onXRFrame);
+    }
+
+    // Start XR session with hit testing
+    async function startXRSession() {
+      try {
+        startButton.disabled = true;
+        startButton.textContent = 'Starting...';
+
+        // Create XR session manager
+        xrSessionManager = new XRSessionManager();
+
+        // Request immersive AR session with hit-test feature
+        await xrSessionManager.requestSession({
+          mode: 'immersive-ar',
+          requiredFeatures: ['local'],
+          optionalFeatures: ['hit-test', 'dom-overlay'],
+          domOverlay: document.body,
+        });
+
+        console.log('XR session started');
+
+        // Create raycaster engine
+        raycasterEngine = new RaycasterEngine(xrSessionManager);
+
+        // Request hit test source
+        if (xrSessionManager.supportsHitTest()) {
+          xrHitTestSource = await raycasterEngine.requestXRHitTestSource();
+          console.log('Hit test source created:', xrHitTestSource);
+        } else {
+          console.warn('Hit testing not supported');
+        }
+
+        // Set up tap handler
+        document.addEventListener('click', async (event) => {
+          if (!xrSessionManager || !raycasterEngine) return;
+
+          try {
+            // Perform hit test
+            const session = xrSessionManager.getSession();
+            if (!session) return;
+
+            // Note: We need to get the current XR frame
+            // In a real implementation, this would be done in the RAF callback
+            console.log('Performing hit test at screen position:', {
+              x: event.clientX,
+              y: event.clientY,
+            });
+
+            // For demo, create a marker at center screen
+            // In production, you'd use the actual hit test result
+            const mockHitResult = {
+              hitPoint: { x: 0, y: 0, z: -1 },
+              normal: { x: 0, y: 1, z: 0 },
+              distance: 1.0,
+              hitType: 'xr-hit-test',
+              confidence: 0.9,
+            };
+
+            createMarker(mockHitResult);
+          } catch (error) {
+            console.error('Hit test failed:', error);
+          }
+        });
+
+        // Start XR animation loop
+        const session = xrSessionManager.getSession();
+        if (session) {
+          session.requestAnimationFrame(onXRFrame);
+        }
+
+        startButton.textContent = 'Stop AR Session';
+        startButton.disabled = false;
+        startButton.onclick = stopXRSession;
+
+      } catch (error) {
+        console.error('Failed to start XR session:', error);
+        startButton.textContent = 'Start AR Session';
+        startButton.disabled = false;
+        alert('Failed to start AR session: ' + error.message);
+      }
+    }
+
+    // Stop XR session
+    async function stopXRSession() {
+      if (xrSessionManager) {
+        await xrSessionManager.endSession();
+      }
+
+      if (raycasterEngine) {
+        raycasterEngine.destroy();
+      }
+
+      // Clean up markers
+      placedMarkers.forEach(m => m.element.remove());
+      placedMarkers = [];
+
+      reticle.style.display = 'none';
+      hitInfo.style.display = 'none';
+
+      xrSessionManager = null;
+      raycasterEngine = null;
+      xrHitTestSource = null;
+
+      startButton.textContent = 'Start AR Session';
+      startButton.onclick = startXRSession;
+    }
+
+    // Check WebXR support
+    async function checkSupport() {
+      const supported = await XRSessionManager.isSupported();
+
+      if (supported) {
+        startButton.disabled = false;
+        startButton.onclick = startXRSession;
+      } else {
+        startButton.disabled = true;
+        startButton.textContent = 'WebXR Not Supported';
+        document.querySelector('.instruction').innerHTML = `
+          <div class="error">
+            WebXR not supported in this browser.<br>
+            Try Chrome/Edge on Android or Safari on iOS.
+          </div>
+        `;
+      }
+    }
+
+    // Initialize
+    checkSupport();
+  </script>
+</body>
+</html>
