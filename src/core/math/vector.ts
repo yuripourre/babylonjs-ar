@@ -95,4 +95,18 @@ export class Vector3 {
   toArray(): [number, number, number] {
     return [this.x, this.y, this.z];
   }
+
+  /**
+   * Static utility: Distance between two vectors
+   */
+  static distance(a: Vector3, b: Vector3): number {
+    return a.distanceTo(b);
+  }
+
+  /**
+   * Static utility: Dot product
+   */
+  static dot(a: Vector3, b: Vector3): number {
+    return a.dot(b);
+  }
 }

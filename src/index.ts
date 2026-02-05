@@ -131,6 +131,32 @@ export {
   withErrorHandling,
 } from './utils/ar-errors';
 
+// SLAM and VIO
+export {
+  SLAMSystem,
+  SLAMMapManager,
+  KeyframeManager,
+  ExtendedKalmanFilter,
+  IMUManager,
+  MapStorage,
+  LoopClosureDetector,
+  type SLAMConfig,
+  type SLAMState,
+  type SLAMStats,
+  type TrackingResult,
+  type CameraPose,
+  type IMUMeasurement,
+  type Keyframe,
+  type MapPoint,
+  type EKFState,
+  type EKFConfig,
+  type IMUManagerConfig,
+  type StorageConfig,
+  type StoredMap,
+  type LoopClosureConfig,
+  type LoopClosureCandidate,
+} from './core/slam';
+
 // Framework Adapters
 export {
   BabylonAR,
@@ -145,4 +171,4 @@ export {
 } from './adapters/three/three-ar';
 
 // Version
-export const VERSION = '0.11.0'; // TypeScript fixes + WebGL2 fallback architecture
+export const VERSION = '0.16.0'; // Critical Bug Fixes: EPnP, Feature Descriptors, SLAM Matching

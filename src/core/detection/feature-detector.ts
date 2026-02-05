@@ -482,6 +482,44 @@ export class FeatureDetector {
   }
 
   /**
+   * Detect keypoints and compute descriptors (SLAM compatible)
+   */
+  async detectAndCompute(grayscaleTexture: GPUTexture): Promise<void> {
+    // 1. Detect keypoints
+    await this.detectKeypoints(grayscaleTexture);
+
+    if (this.currentKeypoints.length === 0) {
+      this.currentDescriptors = new Uint32Array(0);
+      return;
+    }
+
+    // 2. Compute ORB descriptors (fixed: was TODO, now properly calls implementation)
+    this.currentDescriptors = await this.computeDescriptors(
+      grayscaleTexture,
+      this.currentKeypoints
+    );
+
+    console.log(
+      `[FeatureDetector] Detected ${this.currentKeypoints.length} keypoints, ` +
+      `computed ${this.currentDescriptors ? this.currentDescriptors.length / 8 : 0} descriptors`
+    );
+  }
+
+  /**
+   * Get detected keypoints (SLAM compatible)
+   */
+  getKeypoints(): Keypoint[] {
+    return this.currentKeypoints;
+  }
+
+  /**
+   * Get computed descriptors (SLAM compatible)
+   */
+  getDescriptors(): Uint32Array | null {
+    return this.currentDescriptors;
+  }
+
+  /**
    * Clean up resources
    */
   destroy(): void {

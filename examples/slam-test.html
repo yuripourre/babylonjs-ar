@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SLAM System Test - BabylonJS AR</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a1a;
+      color: #fff;
+      overflow: hidden;
+    }
+
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    #overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      pointer-events: none;
+    }
+
+    #status {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 20px;
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
+      pointer-events: all;
+    }
+
+    .status-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    .status-icon {
+      font-size: 24px;
+    }
+
+    .status-title {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+      margin-top: 15px;
+    }
+
+    .stat {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 10px;
+      border-radius: 8px;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      opacity: 0.6;
+      margin-bottom: 5px;
+    }
+
+    .stat-value {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .state-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-top: 10px;
+    }
+
+    .state-tracking { background: #22c55e; }
+    .state-initializing { background: #f59e0b; }
+    .state-lost { background: #ef4444; }
+
+    #controls {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      pointer-events: all;
+    }
+
+    button {
+      flex: 1;
+      min-width: 120px;
+      padding: 12px 20px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.2s;
+      backdrop-filter: blur(10px);
+    }
+
+    button:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.4);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .button-primary {
+      background: #3b82f6;
+      border-color: #3b82f6;
+    }
+
+    .button-primary:hover {
+      background: #2563eb;
+      border-color: #2563eb;
+    }
+
+    .button-danger {
+      background: #ef4444;
+      border-color: #ef4444;
+    }
+
+    .button-danger:hover {
+      background: #dc2626;
+      border-color: #dc2626;
+    }
+
+    #loop-closures {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      max-width: 300px;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 15px;
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .loop-closure-item {
+      background: rgba(34, 197, 94, 0.2);
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+
+    .loop-closure-header {
+      font-weight: 600;
+      margin-bottom: 5px;
+    }
+
+    .loop-closure-details {
+      opacity: 0.8;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="overlay"></canvas>
+
+    <div id="status">
+      <div class="status-header">
+        <div class="status-icon">🗺️</div>
+        <div class="status-title">SLAM System Test</div>
+      </div>
+      <div id="statusText">Initializing...</div>
+      <div class="stats-grid">
+        <div class="stat">
+          <div class="stat-label">State</div>
+          <div class="stat-value" id="statState">-</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">FPS</div>
+          <div class="stat-value" id="statFPS">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Keyframes</div>
+          <div class="stat-value" id="statKeyframes">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Map Points</div>
+          <div class="stat-value" id="statMapPoints">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Features</div>
+          <div class="stat-value" id="statFeatures">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Loop Closures</div>
+          <div class="stat-value" id="statLoops">0</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="loop-closures" style="display: none;">
+      <div style="font-weight: 600; margin-bottom: 10px;">🔄 Loop Closures</div>
+      <div id="loopList"></div>
+    </div>
+
+    <div id="controls">
+      <button id="btnSaveMap" class="button-primary">💾 Save Map</button>
+      <button id="btnLoadMap" disabled>📂 Load Map</button>
+      <button id="btnReset" class="button-danger">🔄 Reset</button>
+      <button id="btnToggleVIO">IMU: OFF</button>
+      <button id="btnToggleLoopClosure">Loop: OFF</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { SLAMSystem } from '../dist/index.js';
+    import { GPUContextManager } from '../dist/index.js';
+
+    let slamSystem;
+    let gpuContext;
+    let video;
+    let canvas;
+    let ctx;
+    let animationId;
+    let loopClosureCount = 0;
+    let savedMapId = null;
+
+    // Configuration
+    const config = {
+      useIMU: false,
+      enableLoopClosure: false,
+      enablePersistence: true,
+      minKeyframeInterval: 200,
+      minKeyframeTranslation: 0.1,
+      minKeyframeRotation: 0.2,
+      maxKeyframes: 100,
+      maxFeatures: 500,
+      loopClosureMinInterval: 10,
+      loopClosureThreshold: 0.75,
+      autosaveInterval: 30000,
+    };
+
+    async function init() {
+      try {
+        updateStatus('🚀 Initializing AR System...');
+
+        video = document.getElementById('video');
+        canvas = document.getElementById('overlay');
+        ctx = canvas.getContext('2d');
+
+        // Request camera
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+
+        video.srcObject = stream;
+        await video.play();
+
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        updateStatus('🔧 Initializing WebGPU...');
+
+        // Initialize GPU context
+        gpuContext = new GPUContextManager();
+        await gpuContext.initialize();
+
+        const backend = gpuContext.getBackendType().toUpperCase();
+        const backendEmoji = backend === 'WEBGPU' ? '🚀' : '🔧';
+
+        updateStatus(`${backendEmoji} ${backend} Initialized`);
+
+        // Initialize SLAM system
+        slamSystem = new SLAMSystem(gpuContext, config);
+        await slamSystem.initialize(video.videoWidth, video.videoHeight);
+
+        updateStatus('✅ SLAM System Ready!');
+
+        // Setup controls
+        setupControls();
+
+        // Start processing
+        processFrame();
+
+      } catch (error) {
+        console.error('Initialization error:', error);
+        updateStatus(`❌ Error: ${error.message}`);
+      }
+    }
+
+    async function processFrame() {
+      try {
+        // Create texture from video frame
+        const grayscaleTexture = await createGrayscaleTexture();
+
+        // Process frame
+        const result = await slamSystem.processFrame(
+          grayscaleTexture,
+          performance.now()
+        );
+
+        // Update stats
+        updateStats(result);
+
+        // Draw overlay
+        drawOverlay(result);
+
+      } catch (error) {
+        console.error('Frame processing error:', error);
+      }
+
+      animationId = requestAnimationFrame(processFrame);
+    }
+
+    async function createGrayscaleTexture() {
+      // Simplified - in production, use proper video frame capture
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = video.videoWidth;
+      tempCanvas.height = video.videoHeight;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(video, 0, 0);
+
+      // Create WebGPU texture
+      const device = gpuContext.getDevice();
+      const texture = device.createTexture({
+        size: [video.videoWidth, video.videoHeight],
+        format: 'r8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+
+      return texture;
+    }
+
+    function updateStats(result) {
+      const stats = slamSystem.getStats();
+
+      document.getElementById('statState').textContent = stats.state;
+      document.getElementById('statFPS').textContent = stats.fps;
+      document.getElementById('statKeyframes').textContent = stats.numKeyframes;
+      document.getElementById('statMapPoints').textContent = stats.numMapPoints;
+      document.getElementById('statFeatures').textContent = result.numTrackedFeatures;
+
+      // State badge
+      const stateClass = `state-${stats.state}`;
+      const stateBadge = document.querySelector('.state-badge');
+      if (stateBadge) {
+        stateBadge.className = `state-badge ${stateClass}`;
+      }
+    }
+
+    function drawOverlay(result) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw tracking state
+      ctx.font = '16px monospace';
+      ctx.fillStyle = result.success ? '#22c55e' : '#ef4444';
+      ctx.fillText(`State: ${result.state}`, 10, 30);
+
+      if (result.pose) {
+        const pos = result.pose.position;
+        ctx.fillText(
+          `Position: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`,
+          10,
+          60
+        );
+      }
+    }
+
+    function setupControls() {
+      // Save map
+      document.getElementById('btnSaveMap').addEventListener('click', async () => {
+        try {
+          savedMapId = await slamSystem.saveMap('Test SLAM Map');
+          updateStatus(`✅ Map saved: ${savedMapId}`);
+          document.getElementById('btnLoadMap').disabled = false;
+        } catch (error) {
+          updateStatus(`❌ Save failed: ${error.message}`);
+        }
+      });
+
+      // Load map
+      document.getElementById('btnLoadMap').addEventListener('click', async () => {
+        if (!savedMapId) return;
+        try {
+          await slamSystem.loadMap(savedMapId);
+          updateStatus(`✅ Map loaded`);
+        } catch (error) {
+          updateStatus(`❌ Load failed: ${error.message}`);
+        }
+      });
+
+      // Reset
+      document.getElementById('btnReset').addEventListener('click', () => {
+        slamSystem.reset();
+        loopClosureCount = 0;
+        document.getElementById('statLoops').textContent = '0';
+        document.getElementById('loopList').innerHTML = '';
+        updateStatus('🔄 System reset');
+      });
+
+      // Toggle VIO
+      document.getElementById('btnToggleVIO').addEventListener('click', async (e) => {
+        config.useIMU = !config.useIMU;
+        e.target.textContent = config.useIMU ? 'IMU: ON' : 'IMU: OFF';
+        updateStatus(config.useIMU ? '📱 VIO Enabled' : '📱 VIO Disabled');
+      });
+
+      // Toggle Loop Closure
+      document.getElementById('btnToggleLoopClosure').addEventListener('click', (e) => {
+        config.enableLoopClosure = !config.enableLoopClosure;
+        e.target.textContent = config.enableLoopClosure ? 'Loop: ON' : 'Loop: OFF';
+        document.getElementById('loop-closures').style.display =
+          config.enableLoopClosure ? 'block' : 'none';
+        updateStatus(config.enableLoopClosure ? '🔄 Loop Closure Enabled' : '🔄 Loop Closure Disabled');
+      });
+    }
+
+    function updateStatus(text) {
+      document.getElementById('statusText').textContent = text;
+    }
+
+    function addLoopClosure(loop) {
+      loopClosureCount++;
+      document.getElementById('statLoops').textContent = loopClosureCount;
+
+      const loopList = document.getElementById('loopList');
+      const item = document.createElement('div');
+      item.className = 'loop-closure-item';
+      item.innerHTML = `
+        <div class="loop-closure-header">Loop #${loopClosureCount}</div>
+        <div class="loop-closure-details">
+          Keyframe: ${loop.candidateKeyframeId}<br>
+          Similarity: ${(loop.similarity * 100).toFixed(1)}%<br>
+          Matches: ${loop.matchCount} (${loop.inliers} inliers)
+        </div>
+      `;
+      loopList.insertBefore(item, loopList.firstChild);
+
+      // Keep only last 10
+      while (loopList.children.length > 10) {
+        loopList.removeChild(loopList.lastChild);
+      }
+    }
+
+    // Start
+    init();
+  </script>
+</body>
+</html>

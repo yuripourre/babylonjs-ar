@@ -146,4 +146,18 @@ export class Quaternion {
   toArray(): [number, number, number, number] {
     return [this.x, this.y, this.z, this.w];
   }
+
+  /**
+   * Static utility: Multiply two quaternions
+   */
+  static multiply(a: Quaternion, b: Quaternion): Quaternion {
+    return a.multiply(b);
+  }
+
+  /**
+   * Static utility: Conjugate of quaternion
+   */
+  static conjugate(q: Quaternion): Quaternion {
+    return q.conjugate();
+  }
 }

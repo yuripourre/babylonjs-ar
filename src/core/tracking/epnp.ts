@@ -222,23 +222,198 @@ export class EPnP {
   }
 
   /**
-   * Compute null space of M using SVD (simplified)
+   * Compute null space of M using inverse power iteration
    * Returns 4 right singular vectors corresponding to smallest singular values
+   *
+   * Mathematical background:
+   * - We need vectors v such that M*v ≈ 0 (null space)
+   * - Equivalent to finding smallest eigenvalues of M^T*M
+   * - Uses inverse power iteration: more stable for small eigenvalues
+   *
+   * @param M - Input matrix (12×12 for EPnP)
+   * @returns Array of 4 null space basis vectors (each 12-dimensional)
    */
   private static computeNullSpace(M: number[][]): number[][] {
-    // In production, use proper SVD implementation
-    // For now, use simplified power iteration or import numeric library
+    const rows = M.length;
+    const cols = M[0].length;
 
-    // Placeholder: return identity-like vectors
-    // TODO: Implement proper SVD or use WASM library
-    const nullSpace: number[][] = [
-      [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-    ];
+    // Step 1: Compute M^T * M (symmetric positive semi-definite)
+    const MtM: number[][] = [];
+    for (let i = 0; i < cols; i++) {
+      MtM[i] = [];
+      for (let j = 0; j < cols; j++) {
+        let sum = 0;
+        for (let k = 0; k < rows; k++) {
+          sum += M[k][i] * M[k][j];
+        }
+        MtM[i][j] = sum;
+      }
+    }
 
-    return nullSpace;
+    // Step 2: Find 4 smallest eigenvectors using inverse power iteration
+    const nullVectors: number[][] = [];
+    const orthogonalized: number[][] = [];
+
+    for (let n = 0; n < 4; n++) {
+      // Start with random vector
+      let v = Array(cols).fill(0).map(() => Math.random() - 0.5);
+
+      // Orthogonalize against previously found vectors
+      for (const prev of orthogonalized) {
+        const dot = this.dotProduct(v, prev);
+        for (let i = 0; i < cols; i++) {
+          v[i] -= dot * prev[i];
+        }
+      }
+
+      // Normalize
+      v = this.normalizeVector(v);
+
+      // Inverse power iteration (find smallest eigenvalue)
+      const maxIterations = 50;
+      const tolerance = 1e-8;
+
+      for (let iter = 0; iter < maxIterations; iter++) {
+        // Solve (M^T*M + shift*I) * v_new = v
+        // Using shifted inverse to find smallest eigenvalue
+        const shift = 0.001; // Small shift for numerical stability
+        const shiftedMatrix = this.addShiftToMatrix(MtM, shift);
+
+        // Solve linear system using Gauss elimination
+        const vNew = this.solveLU(shiftedMatrix, v);
+
+        // Orthogonalize against previous vectors
+        for (const prev of orthogonalized) {
+          const dot = this.dotProduct(vNew, prev);
+          for (let i = 0; i < cols; i++) {
+            vNew[i] -= dot * prev[i];
+          }
+        }
+
+        // Normalize
+        const normalized = this.normalizeVector(vNew);
+
+        // Check convergence
+        let diff = 0;
+        for (let i = 0; i < cols; i++) {
+          diff += Math.abs(normalized[i] - v[i]);
+        }
+
+        v = normalized;
+
+        if (diff < tolerance) {
+          break;
+        }
+      }
+
+      orthogonalized.push([...v]);
+      nullVectors.push(v);
+    }
+
+    return nullVectors;
+  }
+
+  /**
+   * Solve linear system Ax = b using LU decomposition
+   */
+  private static solveLU(A: number[][], b: number[]): number[] {
+    const n = A.length;
+    const L: number[][] = Array(n).fill(0).map(() => Array(n).fill(0));
+    const U: number[][] = Array(n).fill(0).map(() => Array(n).fill(0));
+
+    // LU decomposition
+    for (let i = 0; i < n; i++) {
+      // Upper triangular
+      for (let k = i; k < n; k++) {
+        let sum = 0;
+        for (let j = 0; j < i; j++) {
+          sum += L[i][j] * U[j][k];
+        }
+        U[i][k] = A[i][k] - sum;
+      }
+
+      // Lower triangular
+      for (let k = i; k < n; k++) {
+        if (i === k) {
+          L[i][i] = 1;
+        } else {
+          let sum = 0;
+          for (let j = 0; j < i; j++) {
+            sum += L[k][j] * U[j][i];
+          }
+          if (Math.abs(U[i][i]) < 1e-10) {
+            L[k][i] = 0; // Avoid division by zero
+          } else {
+            L[k][i] = (A[k][i] - sum) / U[i][i];
+          }
+        }
+      }
+    }
+
+    // Forward substitution: Ly = b
+    const y: number[] = Array(n).fill(0);
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      for (let j = 0; j < i; j++) {
+        sum += L[i][j] * y[j];
+      }
+      y[i] = b[i] - sum;
+    }
+
+    // Back substitution: Ux = y
+    const x: number[] = Array(n).fill(0);
+    for (let i = n - 1; i >= 0; i--) {
+      let sum = 0;
+      for (let j = i + 1; j < n; j++) {
+        sum += U[i][j] * x[j];
+      }
+      if (Math.abs(U[i][i]) < 1e-10) {
+        x[i] = 0; // Singular matrix, set to zero
+      } else {
+        x[i] = (y[i] - sum) / U[i][i];
+      }
+    }
+
+    return x;
+  }
+
+  /**
+   * Add shift to diagonal of matrix (for inverse power iteration)
+   */
+  private static addShiftToMatrix(M: number[][], shift: number): number[][] {
+    const n = M.length;
+    const shifted: number[][] = [];
+
+    for (let i = 0; i < n; i++) {
+      shifted[i] = [];
+      for (let j = 0; j < n; j++) {
+        shifted[i][j] = M[i][j] + (i === j ? shift : 0);
+      }
+    }
+
+    return shifted;
+  }
+
+  /**
+   * Dot product of two vectors
+   */
+  private static dotProduct(a: number[], b: number[]): number {
+    let sum = 0;
+    for (let i = 0; i < a.length; i++) {
+      sum += a[i] * b[i];
+    }
+    return sum;
+  }
+
+  /**
+   * Normalize vector to unit length
+   */
+  private static normalizeVector(v: number[]): number[] {
+    const norm = Math.sqrt(this.dotProduct(v, v));
+    if (norm < 1e-10) {
+      return v; // Avoid division by zero
+    }
+    return v.map(x => x / norm);
   }
 
   /**
