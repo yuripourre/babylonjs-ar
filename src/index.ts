@@ -76,6 +76,17 @@ export {
   type ARQualitySettings,
 } from './core/performance';
 
+// Light Estimation
+export {
+  LightEstimator,
+  SphericalHarmonics,
+  BabylonLightingIntegration,
+  type RGB,
+  type LightEstimate,
+  type LightEstimatorConfig,
+  type SHCoefficients,
+} from './core/lighting';
+
 export {
   MarkerDetector,
   type MarkerDetectorConfig,
