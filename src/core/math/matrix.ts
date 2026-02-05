@@ -196,4 +196,38 @@ export class Matrix4 {
   clone(): Matrix4 {
     return new Matrix4(this.data.slice());
   }
+
+  /**
+   * Compose matrix from position, rotation (quaternion), and scale
+   */
+  static compose(position: Vector3, rotation: import('./quaternion').Quaternion, scale: Vector3): Matrix4 {
+    const rotationMatrix = rotation.toMatrix();
+    const result = new Float32Array(16);
+
+    // Apply scale and rotation
+    const sx = scale.x, sy = scale.y, sz = scale.z;
+
+    result[0] = rotationMatrix[0] * sx;
+    result[1] = rotationMatrix[1] * sx;
+    result[2] = rotationMatrix[2] * sx;
+    result[3] = 0;
+
+    result[4] = rotationMatrix[4] * sy;
+    result[5] = rotationMatrix[5] * sy;
+    result[6] = rotationMatrix[6] * sy;
+    result[7] = 0;
+
+    result[8] = rotationMatrix[8] * sz;
+    result[9] = rotationMatrix[9] * sz;
+    result[10] = rotationMatrix[10] * sz;
+    result[11] = 0;
+
+    // Apply translation
+    result[12] = position.x;
+    result[13] = position.y;
+    result[14] = position.z;
+    result[15] = 1;
+
+    return new Matrix4(result);
+  }
 }

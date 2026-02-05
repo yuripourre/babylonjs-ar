@@ -26,6 +26,18 @@ export {
   type ResourceStats,
 } from './core/gpu/resource-manager';
 export { CameraManager, type CameraConfig, type CameraFrame } from './core/camera/camera-manager';
+export {
+  HybridCameraManager,
+  type HybridCameraConfig,
+} from './core/camera/hybrid-camera-manager';
+
+// WebXR Integration
+export {
+  XRSessionManager,
+  type XRSessionConfig,
+  type XRPoseData,
+  type XRViewData,
+} from './core/xr';
 
 // Tracking and detection
 export {
@@ -199,4 +211,4 @@ export {
 export * from './core/constants';
 
 // Version
-export const VERSION = '0.22.0'; // Memory Management: GPU resource tracking and leak detection
+export const VERSION = '0.23.0'; // Phase 1: WebXR Foundation - Session management and hybrid camera

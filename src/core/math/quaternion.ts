@@ -160,4 +160,23 @@ export class Quaternion {
   static conjugate(q: Quaternion): Quaternion {
     return q.conjugate();
   }
+
+  /**
+   * Convert quaternion to 4x4 rotation matrix
+   */
+  toMatrix(): Float32Array {
+    const x = this.x, y = this.y, z = this.z, w = this.w;
+    const x2 = x + x, y2 = y + y, z2 = z + z;
+    const xx = x * x2, xy = x * y2, xz = x * z2;
+    const yy = y * y2, yz = y * z2, zz = z * z2;
+    const wx = w * x2, wy = w * y2, wz = w * z2;
+
+    // Column-major order
+    return new Float32Array([
+      1 - (yy + zz), xy + wz, xz - wy, 0,
+      xy - wz, 1 - (xx + zz), yz + wx, 0,
+      xz + wy, yz - wx, 1 - (xx + yy), 0,
+      0, 0, 0, 1
+    ]);
+  }
 }
