@@ -99,8 +99,8 @@ export class ImagePreprocessor {
 
     for (let i = 0; i < output.length; i++) {
       const val = output[i];
-      if (val < min) min = val;
-      if (val > max) max = val;
+      if (val < min) {min = val;}
+      if (val > max) {max = val;}
     }
 
     // Normalize to [0, 1]

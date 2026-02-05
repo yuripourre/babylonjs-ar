@@ -197,7 +197,7 @@ export class KeyframeManager {
       const distance = Vector3.distance(candidate.pose.position, kf.pose.position);
 
       // Good baseline: 0.3m - 3.0m
-      if (distance < 0.3 || distance > 3.0) continue;
+      if (distance < 0.3 || distance > 3.0) {continue;}
 
       // Compute baseline score
       const baselineScore = Math.min(distance / 1.0, 1.0); // Peak at 1m

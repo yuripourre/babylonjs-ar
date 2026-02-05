@@ -95,7 +95,7 @@ export class Kabsch {
 
     // Step 3: Compute optimal rotation
     const result = this.computeRotation(P_centered, Q_centered);
-    if (!result) return null;
+    if (!result) {return null;}
 
     // Step 4: Compute translation: t = centroidQ - R * centroidP
     const rotatedCentroidP = this.applyRotation(centroidP, result.rotation);

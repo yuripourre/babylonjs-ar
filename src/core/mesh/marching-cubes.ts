@@ -318,7 +318,7 @@ export class MarchingCubes {
     // For now, generate triangles heuristically
 
     const activeEdges = edgeVertices.filter((v) => v !== undefined);
-    if (activeEdges.length < 3) return;
+    if (activeEdges.length < 3) {return;}
 
     // Simple fan triangulation from first vertex
     for (let i = 1; i < activeEdges.length - 1; i++) {

@@ -88,7 +88,7 @@ export class Quaternion {
    */
   normalize(): Quaternion {
     const n = this.norm();
-    if (n === 0) return Quaternion.identity();
+    if (n === 0) {return Quaternion.identity();}
     return new Quaternion(this.x / n, this.y / n, this.z / n, this.w / n);
   }
 

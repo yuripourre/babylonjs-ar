@@ -4,22 +4,24 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { AREngine, type AREngineConfig, type ARFrame } from '../../core/engine';
+import { AREngine, type AREngineConfig } from '../../core/engine';
 import { MarkerTrackingPlugin, type MarkerTrackingConfig } from '../../plugins/marker-tracking-plugin';
 import { type TrackedMarker } from '../../core/tracking/tracker';
 import type { DetectedPlane } from '../../core/detection/plane-detector';
 import type { ARError } from '../../core/errors';
 
+/* eslint-disable no-unused-vars */
 export interface UseAROptions {
   arConfig?: AREngineConfig;
   markerTracking?: MarkerTrackingConfig;
   planeDetection?: boolean;
   autoStart?: boolean;
-  onFrame?: (frame: any) => void;
-  onMarkerDetected?: (marker: any) => void;
-  onPlaneDetected?: (plane: any) => void;
+  onFrame?: (frame: unknown) => void;
+  onMarkerDetected?: (marker: TrackedMarker) => void;
+  onPlaneDetected?: (plane: DetectedPlane) => void;
   onError?: (error: ARError) => void;
 }
+/* eslint-enable no-unused-vars */
 
 export interface UseARResult {
   engine: AREngine | null;
@@ -27,8 +29,8 @@ export interface UseARResult {
   isRunning: boolean;
   error: ARError | null;
   fps: number;
-  markers: any[];
-  planes: any[];
+  markers: TrackedMarker[];
+  planes: DetectedPlane[];
   start: () => Promise<void>;
   stop: () => void;
   restart: () => Promise<void>;
@@ -79,7 +81,9 @@ export function useAR(options: UseAROptions = {}): UseARResult {
 
         // Setup event listeners
         engine.on('frame', (frame) => {
-          if (!mounted) return;
+          if (!mounted) {
+            return;
+          }
 
           // Update markers and planes
           if (frame.markers) {
@@ -96,26 +100,40 @@ export function useAR(options: UseAROptions = {}): UseARResult {
         });
 
         engine.on('fps:change', (newFps) => {
-          if (!mounted) return;
+          if (!mounted) {
+            return;
+          }
           setFPS(newFps);
         });
 
         if (options.onMarkerDetected) {
           engine.on('marker:detected', (marker) => {
-            if (!mounted) return;
-            options.onMarkerDetected!(marker);
+            if (!mounted) {
+              return;
+            }
+            const callback = options.onMarkerDetected;
+            if (callback) {
+              callback(marker);
+            }
           });
         }
 
         if (options.onPlaneDetected) {
           engine.on('plane:detected', (plane) => {
-            if (!mounted) return;
-            options.onPlaneDetected!(plane);
+            if (!mounted) {
+              return;
+            }
+            const callback = options.onPlaneDetected;
+            if (callback) {
+              callback(plane);
+            }
           });
         }
 
         engine.on('error', (err) => {
-          if (!mounted) return;
+          if (!mounted) {
+            return;
+          }
           setError(err);
           if (options.onError) {
             options.onError(err);
@@ -200,11 +218,13 @@ export function useAR(options: UseAROptions = {}): UseARResult {
 /**
  * Hook for marker tracking only
  */
+/* eslint-disable no-unused-vars */
 export function useMarkerTracking(options: {
   markerConfig?: MarkerTrackingConfig;
-  onMarkerDetected?: (marker: any) => void;
+  onMarkerDetected?: (marker: TrackedMarker) => void;
   onMarkerLost?: (markerId: number) => void;
 } = {}) {
+/* eslint-enable no-unused-vars */
   const ar = useAR({
     markerTracking: options.markerConfig || {},
     onMarkerDetected: options.onMarkerDetected,
@@ -213,9 +233,12 @@ export function useMarkerTracking(options: {
   // Setup marker lost listener
   useEffect(() => {
     if (ar.engine && options.onMarkerLost) {
-      ar.engine.on('marker:lost', options.onMarkerLost);
+      const callback = options.onMarkerLost;
+      ar.engine.on('marker:lost', callback);
       return () => {
-        ar.engine?.off('marker:lost', options.onMarkerLost!);
+        if (ar.engine && callback) {
+          ar.engine.off('marker:lost', callback);
+        }
       };
     }
   }, [ar.engine, options.onMarkerLost]);
@@ -226,9 +249,11 @@ export function useMarkerTracking(options: {
 /**
  * Hook for plane detection only
  */
+/* eslint-disable no-unused-vars */
 export function usePlaneDetection(options: {
-  onPlaneDetected?: (plane: any) => void;
+  onPlaneDetected?: (plane: DetectedPlane) => void;
 } = {}) {
+/* eslint-enable no-unused-vars */
   return useAR({
     planeDetection: true,
     onPlaneDetected: options.onPlaneDetected,

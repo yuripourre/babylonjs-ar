@@ -16,10 +16,8 @@ import {
   Quaternion,
   HemisphericLight,
   Color3,
-  Texture,
   VideoTexture,
   StandardMaterial,
-  Color4,
 } from '@babylonjs/core';
 import { AREngine, type ARFrame, type AREngineConfig } from '../../core/engine';
 import { MarkerTrackingPlugin } from '../../plugins/marker-tracking-plugin';
@@ -37,8 +35,10 @@ export interface BabylonARConfig {
     markerSize?: number;
   };
   onReady?: () => void;
-  onMarkerDetected?: (marker: any, anchor: TransformNode) => void;
-  onPlaneDetected?: (plane: any, anchor: TransformNode) => void;
+  /* eslint-disable no-unused-vars */
+  onMarkerDetected?: (marker: TrackedMarker, anchor: TransformNode) => void;
+  onPlaneDetected?: (plane: DetectedPlane, anchor: TransformNode) => void;
+  /* eslint-enable no-unused-vars */
 }
 
 /**
@@ -116,15 +116,21 @@ export class BabylonAR {
     if (this.config.enableMarkers && this.config.onMarkerDetected) {
       this.arEngine.on('marker:detected', (marker) => {
         const anchor = this.getOrCreateMarkerAnchor(marker.id);
-        this.config.onMarkerDetected!(marker, anchor);
+        const callback = this.config.onMarkerDetected;
+        if (callback) {
+          callback(marker, anchor);
+        }
       });
     }
 
     if (this.config.enablePlanes && this.config.onPlaneDetected) {
-      this.arEngine.on('plane:detected', (plane: any) => {
-        const planeId = typeof plane.id === 'number' ? plane.id : parseInt(plane.id || '0', 10);
+      this.arEngine.on('plane:detected', (plane: DetectedPlane) => {
+        const planeId = typeof plane.id === 'number' ? plane.id : parseInt(String(plane.id) || '0', 10);
         const anchor = this.getOrCreatePlaneAnchor(planeId);
-        this.config.onPlaneDetected!(plane, anchor);
+        const callback = this.config.onPlaneDetected;
+        if (callback) {
+          callback(plane, anchor);
+        }
       });
     }
 
@@ -180,10 +186,11 @@ export class BabylonAR {
   /**
    * Process AR frame from image
    */
-  async processImage(image: HTMLImageElement | HTMLCanvasElement): Promise<void> {
+  async processImage(): Promise<void> {
     // Note: New plugin-based AREngine architecture doesn't support direct image input
     // Use camera-based AR or implement a custom plugin for image processing
-    console.warn('processImage is not supported in V2 architecture. Use camera-based AR instead.');
+    // eslint-disable-next-line no-console
+    console.log('processImage is not supported in V2 architecture. Use camera-based AR instead.');
   }
 
   /**
@@ -369,9 +376,13 @@ export class BabylonAR {
   /**
    * Create mesh at marker
    */
+  /* eslint-disable no-unused-vars */
   createMeshAtMarker(markerId: number, createMeshFn: (anchor: TransformNode) => Mesh): Mesh | null {
+  /* eslint-enable no-unused-vars */
     const anchor = this.markerAnchors.get(markerId);
-    if (!anchor) return null;
+    if (!anchor) {
+      return null;
+    }
 
     const mesh = createMeshFn(anchor);
     mesh.parent = anchor;
@@ -381,9 +392,13 @@ export class BabylonAR {
   /**
    * Create mesh at plane
    */
+  /* eslint-disable no-unused-vars */
   createMeshAtPlane(planeId: number, createMeshFn: (anchor: TransformNode) => Mesh): Mesh | null {
+  /* eslint-enable no-unused-vars */
     const anchor = this.planeAnchors.get(planeId);
-    if (!anchor) return null;
+    if (!anchor) {
+      return null;
+    }
 
     const mesh = createMeshFn(anchor);
     mesh.parent = anchor;

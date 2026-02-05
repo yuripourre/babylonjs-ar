@@ -126,7 +126,7 @@ export class SubPixelRefine {
         const y = Math.floor(cy + dy);
 
         // Check bounds
-        if (x < 0 || x >= imageWidth || y < 0 || y >= imageHeight) continue;
+        if (x < 0 || x >= imageWidth || y < 0 || y >= imageHeight) {continue;}
 
         // Get pixel intensity (weight)
         const idx = y * imageWidth + x;
@@ -183,14 +183,14 @@ export class SubPixelRefine {
       for (let dy = -win; dy <= win; dy++) {
         for (let dx = -win; dx <= win; dx++) {
           // Skip zero zone (dead region around corner to avoid singularities)
-          if (Math.abs(dx) < zeroZone && Math.abs(dy) < zeroZone) continue;
+          if (Math.abs(dx) < zeroZone && Math.abs(dy) < zeroZone) {continue;}
 
           const px = cx + dx;
           const py = cy + dy;
 
           // Check bounds
           if (px < 1 || px >= imageWidth - 1 || py < 1 || py >= imageHeight - 1)
-            continue;
+            {continue;}
 
           // Compute image gradients using Sobel
           const gx = this.computeGradientX(imageData, px, py, imageWidth);

@@ -116,10 +116,10 @@ export class SLAMMapManager {
 
     for (const mapPointId of keyframe.mapPoints) {
       const mapPoint = this.map.mapPoints.get(mapPointId);
-      if (!mapPoint) continue;
+      if (!mapPoint) {continue;}
 
       for (const otherKeyframeId of mapPoint.observations) {
-        if (otherKeyframeId === keyframeId) continue;
+        if (otherKeyframeId === keyframeId) {continue;}
 
         const count = sharedPointCounts.get(otherKeyframeId) ?? 0;
         sharedPointCounts.set(otherKeyframeId, count + 1);
@@ -170,7 +170,7 @@ export class SLAMMapManager {
    */
   updateMapPoint(id: number, updates: Partial<MapPoint>): void {
     const mapPoint = this.map.mapPoints.get(id);
-    if (!mapPoint) return;
+    if (!mapPoint) {return;}
 
     Object.assign(mapPoint, updates);
     this.map.lastUpdatedAt = Date.now();
@@ -202,7 +202,7 @@ export class SLAMMapManager {
    */
   cullOldKeyframes(maxKeyframes: number): number {
     const keyframes = this.getAllKeyframes();
-    if (keyframes.length <= maxKeyframes) return 0;
+    if (keyframes.length <= maxKeyframes) {return 0;}
 
     const toRemove = keyframes.length - maxKeyframes;
     const oldKeyframes = keyframes.slice(0, toRemove);
@@ -220,7 +220,7 @@ export class SLAMMapManager {
    */
   private removeKeyframe(id: number): void {
     const keyframe = this.map.keyframes.get(id);
-    if (!keyframe) return;
+    if (!keyframe) {return;}
 
     // Remove from covisibility graph
     this.map.covisibilityGraph.delete(id);
@@ -311,7 +311,7 @@ export class SLAMMapManager {
    * Get map bounds (min/max coordinates)
    */
   getBounds(): { min: Vector3; max: Vector3 } | null {
-    if (this.map.keyframes.size === 0) return null;
+    if (this.map.keyframes.size === 0) {return null;}
 
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;

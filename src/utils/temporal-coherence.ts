@@ -266,10 +266,10 @@ export class TemporalCoherence {
    */
   shouldSearchMarker(id: number): boolean {
     const tracked = this.trackedMarkers.get(id);
-    if (!tracked) return true;
+    if (!tracked) {return true;}
 
     // Always search if confidence is low
-    if (tracked.confidence < 0.7) return true;
+    if (tracked.confidence < 0.7) {return true;}
 
     // Search every N frames for stable markers
     const searchInterval = Math.floor(tracked.confidence * 10); // 7-10 frames
@@ -281,7 +281,7 @@ export class TemporalCoherence {
    */
   shouldSearchPlane(id: number): boolean {
     const tracked = this.trackedPlanes.get(id);
-    if (!tracked) return true;
+    if (!tracked) {return true;}
 
     // Stable planes can be skipped more often
     if (tracked.stable && tracked.confidence > 0.8) {

@@ -536,7 +536,7 @@ export class MarkerDetector {
     quads: Quad[],
     grayscaleTexture: GPUTexture
   ): Promise<DetectedMarker[]> {
-    if (quads.length === 0) return [];
+    if (quads.length === 0) {return [];}
     if (!this.homographyPipeline || !this.markerDecodePipeline) {
       throw new Error('GPU batch pipelines not initialized');
     }

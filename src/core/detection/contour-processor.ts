@@ -113,10 +113,10 @@ export class ContourProcessor {
         }
       }
 
-      if (!found || ++iterations > maxIterations) break;
+      if (!found || ++iterations > maxIterations) {break;}
 
       // Stop if we've returned to start
-      if (x === startX && y === startY && points.length > 2) break;
+      if (x === startX && y === startY && points.length > 2) {break;}
 
     } while (true);
 
@@ -127,7 +127,7 @@ export class ContourProcessor {
    * Approximate contour to polygon
    */
   static approximatePolygon(contour: Contour, epsilon?: number): Point[] {
-    if (contour.points.length < 3) return contour.points;
+    if (contour.points.length < 3) {return contour.points;}
 
     // Douglas-Peucker algorithm
     const eps = epsilon ?? contour.perimeter * 0.02; // 2% of perimeter
@@ -138,7 +138,7 @@ export class ContourProcessor {
    * Douglas-Peucker simplification
    */
   private static douglasPeucker(points: Point[], epsilon: number): Point[] {
-    if (points.length <= 2) return points;
+    if (points.length <= 2) {return points;}
 
     // Find point with max distance
     let maxDist = 0;
@@ -188,7 +188,7 @@ export class ContourProcessor {
    * Try to extract quad from polygon
    */
   static extractQuad(polygon: Point[]): Quad | null {
-    if (polygon.length !== 4) return null;
+    if (polygon.length !== 4) {return null;}
 
     // Order corners: TL, TR, BR, BL
     const corners = this.orderQuadCorners(polygon);
@@ -248,7 +248,7 @@ export class ContourProcessor {
    * Validate quad geometry
    */
   private static isValidQuad(corners: Point[]): boolean {
-    if (corners.length !== 4) return false;
+    if (corners.length !== 4) {return false;}
 
     // Check aspect ratio (should be roughly square for markers)
     const width1 = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
@@ -262,10 +262,10 @@ export class ContourProcessor {
     const aspectRatio = Math.max(avgWidth, avgHeight) / Math.min(avgWidth, avgHeight);
 
     // Markers should be roughly square (aspect ratio < 2)
-    if (aspectRatio > 2.0) return false;
+    if (aspectRatio > 2.0) {return false;}
 
     // Check minimum size
-    if (avgWidth < 20 || avgHeight < 20) return false;
+    if (avgWidth < 20 || avgHeight < 20) {return false;}
 
     return true;
   }
@@ -299,7 +299,7 @@ export class ContourProcessor {
    * Check if polygon is convex
    */
   private static isConvex(points: Point[]): boolean {
-    if (points.length < 3) return false;
+    if (points.length < 3) {return false;}
 
     let sign = 0;
 

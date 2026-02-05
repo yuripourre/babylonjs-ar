@@ -52,8 +52,8 @@ export class KDTree {
     indices.sort((a, b) => {
       const pa = this.points[a];
       const pb = this.points[b];
-      if (axis === 0) return pa.x - pb.x;
-      if (axis === 1) return pa.y - pb.y;
+      if (axis === 0) {return pa.x - pb.x;}
+      if (axis === 1) {return pa.y - pb.y;}
       return pa.z - pb.z;
     });
 
@@ -114,9 +114,9 @@ export class KDTree {
     // Determine which subtree to search first
     const axis = node.axis;
     let diff: number;
-    if (axis === 0) diff = target.x - node.point.x;
-    else if (axis === 1) diff = target.y - node.point.y;
-    else diff = target.z - node.point.z;
+    if (axis === 0) {diff = target.x - node.point.x;}
+    else if (axis === 1) {diff = target.y - node.point.y;}
+    else {diff = target.z - node.point.z;}
 
     const near = diff < 0 ? node.left : node.right;
     const far = diff < 0 ? node.right : node.left;
@@ -170,9 +170,9 @@ export class KDTree {
     // Determine which subtrees to search
     const axis = node.axis;
     let diff: number;
-    if (axis === 0) diff = target.x - node.point.x;
-    else if (axis === 1) diff = target.y - node.point.y;
-    else diff = target.z - node.point.z;
+    if (axis === 0) {diff = target.x - node.point.x;}
+    else if (axis === 1) {diff = target.y - node.point.y;}
+    else {diff = target.z - node.point.z;}
 
     // Always search near subtree
     const near = diff < 0 ? node.left : node.right;

@@ -121,7 +121,7 @@ export class VIOManager {
    * @param measurement IMU data (accelerometer + gyroscope)
    */
   addIMUMeasurement(measurement: IMUMeasurement): void {
-    if (!this.initialized) return;
+    if (!this.initialized) {return;}
 
     // Process measurement directly
     this.handleIMUMeasurement(measurement);

@@ -246,11 +246,11 @@ export class Matrix {
     const minor: number[][] = [];
 
     for (let i = 0; i < n; i++) {
-      if (i === row) continue;
+      if (i === row) {continue;}
 
       const minorRow: number[] = [];
       for (let j = 0; j < n; j++) {
-        if (j === col) continue;
+        if (j === col) {continue;}
         minorRow.push(A[i][j]);
       }
 

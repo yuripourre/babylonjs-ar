@@ -348,8 +348,8 @@ export class DepthEstimator {
       const memory = (performance as any).memory;
       const availableMB = memory.jsHeapSizeLimit / (1024 * 1024);
 
-      if (availableMB > 1000) return 'high';
-      if (availableMB > 500) return 'medium';
+      if (availableMB > 1000) {return 'high';}
+      if (availableMB > 500) {return 'medium';}
     }
 
     // Default to medium

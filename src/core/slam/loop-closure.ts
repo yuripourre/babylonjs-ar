@@ -242,20 +242,20 @@ export class LoopClosureDetector {
 
     for (const wordId of currentBoW.words.keys()) {
       const keyframeIds = this.invertedIndex.get(wordId);
-      if (!keyframeIds) continue;
+      if (!keyframeIds) {continue;}
 
       for (const keyframeId of keyframeIds) {
         // Skip current keyframe
-        if (keyframeId === currentKeyframe.id) continue;
+        if (keyframeId === currentKeyframe.id) {continue;}
 
         // Skip recent keyframes (covisibility)
         const keyframe = this.map.getKeyframe(keyframeId);
-        if (!keyframe) continue;
+        if (!keyframe) {continue;}
 
         const timeDiff = Math.abs(
           currentKeyframe.timestamp - keyframe.timestamp
         );
-        if (timeDiff < 3000) continue; // 3 seconds minimum
+        if (timeDiff < 3000) {continue;} // 3 seconds minimum
 
         // Accumulate score
         candidateScores.set(
@@ -311,7 +311,7 @@ export class LoopClosureDetector {
 
     for (const candidate of candidates) {
       const candidateKeyframe = this.map.getKeyframe(candidate.candidateKeyframeId);
-      if (!candidateKeyframe) continue;
+      if (!candidateKeyframe) {continue;}
 
       // Match features between current and candidate keyframe
       const matches = this.matchFeatures(
@@ -409,7 +409,7 @@ export class LoopClosureDetector {
     kf2: Keyframe,
     matches: Array<{ idx1: number; idx2: number }>
   ): number {
-    if (matches.length < 3) return 0;
+    if (matches.length < 3) {return 0;}
 
     const maxIterations = 100;
     let bestInliers = 0;
@@ -427,7 +427,7 @@ export class LoopClosureDetector {
         }
       }
 
-      if (sample.length < 3) break;
+      if (sample.length < 3) {break;}
 
       // Compute inliers (simplified - just check reprojection error)
       let inliers = 0;

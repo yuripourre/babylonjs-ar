@@ -61,7 +61,7 @@ export class Vector3 {
    */
   normalize(): Vector3 {
     const len = this.length();
-    if (len === 0) return new Vector3(0, 0, 0);
+    if (len === 0) {return new Vector3(0, 0, 0);}
     return new Vector3(this.x / len, this.y / len, this.z / len);
   }
 

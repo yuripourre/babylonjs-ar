@@ -181,7 +181,7 @@ export class ARDebug {
    */
   private drawPlanes(planes: DetectedPlane[]): void {
     this.ctx.strokeStyle = this.config.planeColor;
-    this.ctx.fillStyle = this.config.planeColor + '40'; // Semi-transparent
+    this.ctx.fillStyle = `${this.config.planeColor  }40`; // Semi-transparent
     this.ctx.lineWidth = 2;
 
     for (const plane of planes) {
@@ -282,8 +282,8 @@ export class ARDebug {
 
     // Color code FPS
     let color = '#00ff00'; // Green
-    if (this.fps < 30) color = '#ff0000'; // Red
-    else if (this.fps < 45) color = '#ffaa00'; // Orange
+    if (this.fps < 30) {color = '#ff0000';} // Red
+    else if (this.fps < 45) {color = '#ffaa00';} // Orange
 
     this.ctx.fillStyle = color;
     this.ctx.font = `bold ${this.config.fontSize + 4}px monospace`;

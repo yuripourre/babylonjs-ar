@@ -139,7 +139,7 @@ export class SLAMMapper {
    * Detect loop closures for a keyframe
    */
   private detectLoopClosures(keyframe: Keyframe): void {
-    if (!this.loopClosureDetector) return;
+    if (!this.loopClosureDetector) {return;}
 
     // Add keyframe to loop closure database
     this.loopClosureDetector.addKeyframe(keyframe);

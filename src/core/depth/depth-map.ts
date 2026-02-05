@@ -65,7 +65,7 @@ export class DepthMap {
    */
   getDepthMeters(x: number, y: number): number | null {
     const normalized = this.getDepth(x, y);
-    if (normalized === null) return null;
+    if (normalized === null) {return null;}
 
     return this.minDepth + normalized * (this.maxDepth - this.minDepth);
   }
@@ -109,7 +109,7 @@ export class DepthMap {
     cy: number
   ): Vector3 | null {
     const depth = this.getDepthMeters(x, y);
-    if (depth === null || depth <= 0) return null;
+    if (depth === null || depth <= 0) {return null;}
 
     // Pinhole camera model
     const x3d = (x - cx) * depth / fx;
@@ -247,7 +247,7 @@ export class DepthMap {
         const right = this.unproject(x + 1, y, fx, fy, cx, cy);
         const down = this.unproject(x, y + 1, fx, fy, cx, cy);
 
-        if (!center || !right || !down) continue;
+        if (!center || !right || !down) {continue;}
 
         // Compute normal via cross product
         const dx = right.subtract(center);

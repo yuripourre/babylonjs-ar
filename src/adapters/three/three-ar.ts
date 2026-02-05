@@ -12,6 +12,7 @@ import type { DetectedPlane } from '../../core/detection/plane-detector';
 import type { Pose } from '../../core/tracking/pose-estimator';
 
 // Three.js type imports (peer dependency)
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export interface ThreeTypes {
   Scene: any;
   WebGLRenderer: any;
@@ -29,6 +30,7 @@ export interface ThreeTypes {
   RGBFormat: any;
   DoubleSide: any;
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export interface ThreeARConfig {
   arConfig?: AREngineConfig;
@@ -40,8 +42,10 @@ export interface ThreeARConfig {
     markerSize?: number;
   };
   onReady?: () => void;
-  onMarkerDetected?: (marker: any, anchor: any) => void;
-  onPlaneDetected?: (plane: any, anchor: any) => void;
+  /* eslint-disable no-unused-vars */
+  onMarkerDetected?: (marker: TrackedMarker, anchor: unknown) => void;
+  onPlaneDetected?: (plane: DetectedPlane, anchor: unknown) => void;
+  /* eslint-enable no-unused-vars */
   THREE: ThreeTypes; // Three.js library object
 }
 
@@ -147,15 +151,21 @@ export class ThreeAR {
     if (this.config.enableMarkers && this.config.onMarkerDetected) {
       this.arEngine.on('marker:detected', (marker) => {
         const anchor = this.getOrCreateMarkerAnchor(marker.id);
-        this.config.onMarkerDetected!(marker, anchor);
+        const callback = this.config.onMarkerDetected;
+        if (callback) {
+          callback(marker, anchor);
+        }
       });
     }
 
     if (this.config.enablePlanes && this.config.onPlaneDetected) {
-      this.arEngine.on('plane:detected', (plane: any) => {
-        const planeId = typeof plane.id === 'number' ? plane.id : parseInt(plane.id || '0', 10);
+      this.arEngine.on('plane:detected', (plane: DetectedPlane) => {
+        const planeId = typeof plane.id === 'number' ? plane.id : parseInt(String(plane.id) || '0', 10);
         const anchor = this.getOrCreatePlaneAnchor(planeId);
-        this.config.onPlaneDetected!(plane, anchor);
+        const callback = this.config.onPlaneDetected;
+        if (callback) {
+          callback(plane, anchor);
+        }
       });
     }
 
@@ -176,8 +186,10 @@ export class ThreeAR {
 
     // Start render loop
     const animate = () => {
-      if (!this.isRunning) return;
-      requestAnimationFrame(animate);
+      if (!this.isRunning) {
+        return;
+      }
+      globalThis.requestAnimationFrame(animate);
       this.renderer.render(this.scene, this.camera);
     };
 

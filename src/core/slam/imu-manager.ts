@@ -277,7 +277,7 @@ export class IMUManager {
    * Handle accelerometer reading
    */
   private handleAccelerometerReading(): void {
-    if (!this.accelerometer) return;
+    if (!this.accelerometer) {return;}
 
     this.latestAccel = new Vector3(
       this.accelerometer.x ?? 0,
@@ -292,7 +292,7 @@ export class IMUManager {
    * Handle gyroscope reading
    */
   private handleGyroscopeReading(): void {
-    if (!this.gyroscope) return;
+    if (!this.gyroscope) {return;}
 
     this.latestGyro = new Vector3(
       this.gyroscope.x ?? 0,

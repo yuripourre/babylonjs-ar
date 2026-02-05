@@ -387,7 +387,7 @@ export class RaycasterEngine {
         yi > point2D.y !== yj > point2D.y &&
         point2D.x < ((xj - xi) * (point2D.y - yi)) / (yj - yi) + xi;
 
-      if (intersect) inside = !inside;
+      if (intersect) {inside = !inside;}
     }
 
     return inside;

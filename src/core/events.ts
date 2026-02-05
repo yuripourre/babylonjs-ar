@@ -202,8 +202,8 @@ export interface AREvents {
   'frame:after': [frame: ARFrame];
 
   // Markers
-  'marker:detected': [marker: DetectedMarker];
-  'marker:updated': [marker: DetectedMarker];
+  'marker:detected': [marker: TrackedMarker];
+  'marker:updated': [marker: TrackedMarker];
   'marker:lost': [id: number];
 
   // Planes
@@ -245,20 +245,12 @@ export interface AREvents {
  * Import types (defined elsewhere, just for type checking)
  */
 import type { ARError } from './errors';
+import type { TrackedMarker } from './tracking/tracker';
+import type { DetectedPlane } from './detection/plane-detector';
 
 // Stub types for demonstration
 interface ARFrame {
   timestamp: number;
-  [key: string]: unknown;
-}
-
-interface DetectedMarker {
-  id: number;
-  [key: string]: unknown;
-}
-
-interface DetectedPlane {
-  id: string;
   [key: string]: unknown;
 }
 

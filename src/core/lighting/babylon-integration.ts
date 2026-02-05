@@ -80,7 +80,7 @@ export class BabylonLightingIntegration {
 
     if (!hemiLight) {
       const BABYLON = (globalThis as any).BABYLON;
-      if (!BABYLON) return;
+      if (!BABYLON) {return;}
 
       // Create hemisphere light (simulates sky + ground bounce)
       hemiLight = new BABYLON.HemisphericLight(
@@ -116,7 +116,7 @@ export class BabylonLightingIntegration {
    */
   private static updatePBREnvironment(scene: any, estimate: LightEstimate): void {
     const BABYLON = (globalThis as any).BABYLON;
-    if (!BABYLON) return;
+    if (!BABYLON) {return;}
 
     // Set ambient color for non-PBR materials
     scene.ambientColor.set(
@@ -204,7 +204,7 @@ export class BabylonLightingIntegration {
    */
   static createEnvironmentTexture(scene: any, estimate: LightEstimate): any {
     const BABYLON = (globalThis as any).BABYLON;
-    if (!BABYLON) return null;
+    if (!BABYLON) {return null;}
 
     // For now, create a simple solid color texture
     // A full implementation would generate a cube map from SH coefficients
@@ -230,7 +230,7 @@ export class BabylonLightingIntegration {
    */
   static applyToPBRMaterials(scene: any, estimate: LightEstimate): void {
     const BABYLON = (globalThis as any).BABYLON;
-    if (!BABYLON) return;
+    if (!BABYLON) {return;}
 
     scene.materials.forEach((material: any) => {
       if (material.getClassName() === 'PBRMaterial' ||
@@ -252,7 +252,7 @@ export class BabylonLightingIntegration {
    */
   static createDebugVisualization(scene: any, estimate: LightEstimate): any {
     const BABYLON = (globalThis as any).BABYLON;
-    if (!BABYLON) return null;
+    if (!BABYLON) {return null;}
 
     // Create an arrow showing light direction
     const dir = estimate.primaryDirection;

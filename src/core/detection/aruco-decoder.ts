@@ -106,7 +106,7 @@ export class ArucoDecoder {
    * Rotate bit pattern
    */
   private rotateBits(bits: number[], size: number, rotation: number): number[] {
-    if (rotation === 0) return bits;
+    if (rotation === 0) {return bits;}
 
     const rotated = new Array(bits.length);
 
@@ -135,7 +135,7 @@ export class ArucoDecoder {
    * Calculate Hamming distance between two bit patterns
    */
   private hammingDistance(bits1: number[], bits2: number[]): number {
-    if (bits1.length !== bits2.length) return Infinity;
+    if (bits1.length !== bits2.length) {return Infinity;}
 
     let distance = 0;
     for (let i = 0; i < bits1.length; i++) {
@@ -191,13 +191,13 @@ export class ArucoDecoder {
       // Top border
       const topY = Math.floor(cellSize * 0.5);
       const topIdx = topY * imageSize + x;
-      if (imageData[topIdx] < 127) blackPixels++;
+      if (imageData[topIdx] < 127) {blackPixels++;}
       totalBorderPixels++;
 
       // Bottom border
       const bottomY = Math.floor(cellSize * (markerSize + 1.5));
       const bottomIdx = bottomY * imageSize + x;
-      if (imageData[bottomIdx] < 127) blackPixels++;
+      if (imageData[bottomIdx] < 127) {blackPixels++;}
       totalBorderPixels++;
     }
 
@@ -206,13 +206,13 @@ export class ArucoDecoder {
       // Left border
       const leftX = Math.floor(cellSize * 0.5);
       const leftIdx = y * imageSize + leftX;
-      if (imageData[leftIdx] < 127) blackPixels++;
+      if (imageData[leftIdx] < 127) {blackPixels++;}
       totalBorderPixels++;
 
       // Right border
       const rightX = Math.floor(cellSize * (markerSize + 1.5));
       const rightIdx = y * imageSize + rightX;
-      if (imageData[rightIdx] < 127) blackPixels++;
+      if (imageData[rightIdx] < 127) {blackPixels++;}
       totalBorderPixels++;
     }
 

@@ -299,7 +299,7 @@ export class GeometricVerifier {
 
     // Normalize
     const norm = Math.sqrt(solution.reduce((sum, v) => sum + v * v, 0));
-    if (norm === 0) return null;
+    if (norm === 0) {return null;}
 
     for (let i = 0; i < 9; i++) {
       solution[i] /= norm;
@@ -370,7 +370,7 @@ export class GeometricVerifier {
     const inlierRatio = Math.max(0.3, sampleSize / totalMatches);
     const p = Math.pow(inlierRatio, sampleSize);
 
-    if (p >= 1) return 1;
+    if (p >= 1) {return 1;}
 
     const k = Math.log(1 - confidence) / Math.log(1 - p);
     return Math.ceil(k);

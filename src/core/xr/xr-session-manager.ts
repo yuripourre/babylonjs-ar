@@ -291,8 +291,8 @@ export class XRSessionManager {
         const viewMatrix = new Matrix4(view.transform.inverse.matrix);
 
         let eye: 'left' | 'right' | 'none' = 'none';
-        if (view.eye === 'left') eye = 'left';
-        else if (view.eye === 'right') eye = 'right';
+        if (view.eye === 'left') {eye = 'left';}
+        else if (view.eye === 'right') {eye = 'right';}
 
         // Get viewport from layer if available
         const viewport = layer?.getViewport(view);

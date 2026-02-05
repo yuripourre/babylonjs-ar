@@ -313,7 +313,7 @@ export class FeatureDetector {
 
           for (let dy = -radius; dy <= radius && isMax; dy++) {
             for (let dx = -radius; dx <= radius && isMax; dx++) {
-              if (dx === 0 && dy === 0) continue;
+              if (dx === 0 && dy === 0) {continue;}
 
               const neighborIdx = (y + dy) * width + (x + dx);
               if (cornersData[neighborIdx] >= response) {

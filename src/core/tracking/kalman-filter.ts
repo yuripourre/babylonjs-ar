@@ -64,7 +64,7 @@ export class KalmanFilter {
     const now = performance.now();
     const dt = (now - this.lastUpdateTime) / 1000; // Convert to seconds
 
-    if (dt <= 0) return;
+    if (dt <= 0) {return;}
 
     // Constant velocity model
     this.state.position = this.state.position.add(this.state.velocity.multiply(dt));

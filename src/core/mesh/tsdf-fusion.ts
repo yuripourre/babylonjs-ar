@@ -106,7 +106,7 @@ export class TSDFFusion {
           );
 
           // Skip if behind camera
-          if (voxelCam.z <= 0) continue;
+          if (voxelCam.z <= 0) {continue;}
 
           // Project to image space
           const u = (voxelCam.x * fx) / voxelCam.z + cx;
@@ -123,7 +123,7 @@ export class TSDFFusion {
             Math.floor(v)
           );
 
-          if (measuredDepth === null) continue;
+          if (measuredDepth === null) {continue;}
           if (measuredDepth < this.config.minDepth || measuredDepth > this.config.maxDepth) {
             continue;
           }
@@ -187,7 +187,7 @@ export class TSDFFusion {
 
     for (const corner of corners) {
       const depth = depthMap.getDepthMeters(corner.x, corner.y);
-      if (!depth) continue;
+      if (!depth) {continue;}
 
       // Unproject to camera space
       const xCam = ((corner.x - cx) * depth) / fx;

@@ -322,7 +322,7 @@ export class SLAMSystem {
    */
   private async track(context: TrackingContext): Promise<TrackingResult> {
     // Track frame using SLAMTracker
-    let result = await this.tracker.trackFrame(context);
+    const result = await this.tracker.trackFrame(context);
 
     if (!result.success) {
       // Tracking failed, transition to lost
@@ -372,7 +372,7 @@ export class SLAMSystem {
    * Add IMU measurement (for VIO)
    */
   addIMUMeasurement(measurement: IMUMeasurement): void {
-    if (!this.vio) return;
+    if (!this.vio) {return;}
     this.vio.addIMUMeasurement(measurement);
   }
 
