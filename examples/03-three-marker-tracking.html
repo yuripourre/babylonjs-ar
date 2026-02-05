@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Three.js AR V2 - Marker Tracking</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui; background: #1a1a1a; color: white; overflow: hidden; }
+    #renderCanvas { width: 100%; height: 100vh; display: block; }
+    .controls { position: fixed; top: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; z-index: 1000; max-width: 350px; }
+    h1 { font-size: 20px; margin-bottom: 15px; color: #00d9ff; }
+    .status { padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; }
+    .status.info { background: rgba(0,150,255,0.2); border: 1px solid #0096ff; }
+    .status.success { background: rgba(0,255,0,0.2); border: 1px solid #00ff00; }
+    .status.error { background: rgba(255,0,0,0.2); border: 1px solid #ff0000; }
+    .marker-info { margin-top: 15px; padding: 10px; background: rgba(0, 217, 255, 0.1); border-radius: 5px; font-size: 13px; }
+    button { background: #00d9ff; color: black; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+
+  <div class="controls">
+    <h1>🎯 Three.js Marker Tracking (V2)</h1>
+    <div id="status" class="status info">Initializing...</div>
+
+    <div class="marker-info">
+      <h4>📍 Detected Markers:</h4>
+      <div id="markerList">No markers detected</div>
+    </div>
+
+    <button onclick="downloadMarker()">⬇️ Download Test Marker</button>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { AREngine, MarkerTrackingPlugin } from '../dist/index.js';
+
+    function updateStatus(msg, type = 'info') {
+      document.getElementById('status').textContent = msg;
+      document.getElementById('status').className = `status ${type}`;
+    }
+
+    function updateMarkerList(markers) {
+      const listEl = document.getElementById('markerList');
+      if (markers.length === 0) {
+        listEl.innerHTML = '<div style="opacity: 0.6;">No markers detected</div>';
+        return;
+      }
+      listEl.innerHTML = markers.map(m => `
+        <div style="padding:8px;margin:5px 0;background:rgba(0,0,0,0.3);border-radius:3px;display:flex;justify-content:space-between;">
+          <span style="font-weight:bold;color:#00ff00;">Marker ${m.id}</span>
+          <span style="font-size:11px;opacity:0.8;">(${(m.confidence*100).toFixed(0)}%)</span>
+        </div>
+      `).join('');
+    }
+
+    // Create Three.js scene
+    const canvas = document.getElementById('renderCanvas');
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.z = 5;
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // Lighting
+    const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
+    scene.add(light);
+
+    // Store marker objects
+    const markerAnchors = new Map();
+
+    function createMarkerCube(markerId) {
+      const anchor = new THREE.Group();
+      anchor.name = `Marker_${markerId}`;
+
+      const geometry = new THREE.BoxGeometry(0.05, 0.05, 0.05);
+      const material = new THREE.MeshPhongMaterial({
+        color: new THREE.Color(Math.random(), Math.random(), Math.random())
+      });
+
+      const cube = new THREE.Mesh(geometry, material);
+      anchor.add(cube);
+      scene.add(anchor);
+
+      markerAnchors.set(markerId, { anchor, cube });
+      console.log(`Created cube for marker ${markerId}`);
+    }
+
+    function updateMarkerTransform(markerId, pose) {
+      const obj = markerAnchors.get(markerId);
+      if (!obj || !pose) return;
+
+      obj.anchor.position.set(pose.position.x, pose.position.y, pose.position.z);
+      obj.anchor.quaternion.set(
+        pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w
+      );
+    }
+
+    function removeMarker(markerId) {
+      const obj = markerAnchors.get(markerId);
+      if (obj) {
+        scene.remove(obj.anchor);
+        obj.cube.geometry.dispose();
+        obj.cube.material.dispose();
+        markerAnchors.delete(markerId);
+      }
+    }
+
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Rotate cubes
+      for (const [id, obj] of markerAnchors) {
+        obj.cube.rotation.y += 0.02;
+        obj.cube.rotation.x += 0.01;
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    // Initialize AR Engine (V2 API)
+    async function initAR() {
+      try {
+        updateStatus('Initializing AR Engine...', 'info');
+
+        const ar = new AREngine()
+          .use(new MarkerTrackingPlugin({
+            dictionary: 'ARUCO_4X4_50',
+            markerSize: 0.1,
+          }));
+
+        ar.on('marker:detected', (marker) => {
+          if (!markerAnchors.has(marker.id)) {
+            createMarkerCube(marker.id);
+            updateStatus(`✨ Found marker ${marker.id}!`, 'success');
+          }
+          updateMarkerTransform(marker.id, marker.pose);
+        });
+
+        ar.on('frame', (frame) => {
+          const markers = frame.markers || [];
+          updateMarkerList(markers);
+
+          const currentMarkers = new Set(markers.map(m => m.id));
+          for (const id of markerAnchors.keys()) {
+            if (!currentMarkers.has(id)) {
+              removeMarker(id);
+            }
+          }
+        });
+
+        ar.on('error', (error) => {
+          console.error('AR Error:', error);
+          updateStatus(error.message, 'error');
+        });
+
+        await ar.initialize();
+        updateStatus('AR Engine initialized!', 'success');
+
+        await ar.start();
+        updateStatus('AR Engine running!', 'success');
+
+        animate();
+
+        return ar;
+      } catch (error) {
+        console.error('Failed to initialize:', error);
+        updateStatus(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    window.downloadMarker = function() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 400;
+      canvas.height = 400;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, 400, 400);
+      ctx.fillStyle = 'black';
+      ctx.fillRect(50, 50, 300, 300);
+      ctx.fillStyle = 'white';
+      ctx.fillRect(75, 75, 250, 250);
+
+      const cellSize = 50;
+      const pattern = [[0,0,0,0],[0,1,1,0],[0,1,1,0],[0,0,0,0]];
+      ctx.fillStyle = 'black';
+      for (let y = 0; y < 4; y++) {
+        for (let x = 0; x < 4; x++) {
+          if (pattern[y][x] === 1) {
+            ctx.fillRect(87.5 + x * cellSize, 87.5 + y * cellSize, cellSize, cellSize);
+          }
+        }
+      }
+
+      canvas.toBlob((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'aruco-marker-0.png';
+        a.click();
+        URL.revokeObjectURL(url);
+        updateStatus('✅ Marker downloaded!', 'success');
+      });
+    };
+
+    initAR();
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

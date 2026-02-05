@@ -1,360 +1,339 @@
-# BabylonJS AR Examples
+# BabylonJS AR V2 Examples
 
-Complete examples demonstrating all features of babylonjs-ar with both Babylon.js and Three.js.
-
-## 🎯 Examples
-
-### ⭐ Recommended: Complete Hybrid Demos
-
-#### `babylon-hybrid-complete.html` (NEW)
-**Complete AR showcase with all features enabled**
-- ✅ Marker tracking (ArUco 4x4, multiple simultaneous)
-- ✅ Plane detection (horizontal & vertical surfaces)
-- ✅ Depth estimation integration (stereo/ML-based)
-- ✅ Feature tracking pipeline
-- ✅ Real-time statistics & FPS
-- ✅ Toggle controls for each feature
-- ✅ Multiple 3D object types with animations
-- ✅ Interactive UI with status indicators
-
-**Best for:** Understanding full capabilities, testing all features
-
-#### `three-hybrid-complete.html` (NEW)
-**Three.js version of complete AR demo**
-- Same features as Babylon.js version
-- Three.js specific optimizations
-- Phong lighting model
-- Custom Three.js animations
-
-**Best for:** Three.js developers, cross-framework comparison
-
----
-
-### Babylon.js Examples
-
-### 1. ArUco Marker Example (`babylon-aruco-marker.html`)
-
-**What it does:** Tracks ArUco markers in real-time and places 3D cubes on them.
-
-**Features:**
-- ✅ Real-time marker detection
-- ✅ Automatic 3D object placement
-- ✅ Spinning animated cubes
-- ✅ Multiple markers support
-- ✅ Download test marker button
-
-**How to use:**
-```bash
-# Option 1: Open directly in browser
-open babylon-aruco-marker.html
-
-# Option 2: Serve with local server
-python -m http.server 8000
-# Then open http://localhost:8000/babylon-aruco-marker.html
-```
-
-**Steps:**
-1. Allow camera access when prompted
-2. Print a marker from https://chev.me/arucogen/ (4x4 Dictionary, IDs 0-49)
-3. Or click "Download Test Marker" button
-4. Point camera at the marker
-5. Watch the 3D cube appear!
-
-**Supported Markers:**
-- **4x4 Dictionary**: 50 markers (IDs 0-49)
-- **5x5 Dictionary**: 100 markers (IDs 0-99)
-- **6x6 Dictionary**: 50 markers (IDs 0-49)
-
-**Tip:** Keep marker flat and well-lit for best tracking.
-
----
-
-### 2. Markerless Image Example (`babylon-markerless-image.html`)
-
-**What it does:** Upload an image, detect flat surfaces, and place 3D objects on them.
-
-**Features:**
-- ✅ Drag & drop image upload
-- ✅ Automatic plane detection
-- ✅ Multiple 3D object types (cube, sphere, cylinder, torus)
-- ✅ Interactive 3D view
-- ✅ Visual plane indicators
-
-**How to use:**
-```bash
-# Option 1: Open directly in browser
-open babylon-markerless-image.html
-
-# Option 2: Serve with local server
-python -m http.server 8000
-# Then open http://localhost:8000/babylon-markerless-image.html
-```
-
-**Steps:**
-1. Drag & drop or click to upload an image
-2. Choose a photo with flat surfaces (floor, table, wall)
-3. Click "Detect Planes"
-4. Add 3D objects with the buttons
-5. Rotate the view with your mouse!
-
-**Tip:** Photos with good lighting and clear textures work best.
-
----
-
-### Three.js Examples
-
-### 3. Three.js ArUco Marker (`three-aruco-marker.html`)
-**Marker tracking with Three.js**
-- ArUco marker detection with Three.js renderer
-- Object3D anchor system
-- VideoTexture background integration
-- Animated cubes on markers
-
-### 4. Three.js Markerless Image (`three-markerless-image.html`)
-**Plane detection with Three.js**
-- Image upload and plane detection
-- Three.js specific geometry
-- OrbitControls for interaction
-- Multiple mesh types
-
----
-
-## 📊 Feature Matrix
-
-| Example | Markers | Planes | Depth | Features | Framework |
-|---------|---------|--------|-------|----------|-----------|
-| babylon-hybrid-complete | ✅ | ✅ | 🔄 | 🔄 | Babylon.js |
-| three-hybrid-complete | ✅ | ✅ | 🔄 | 🔄 | Three.js |
-| babylon-aruco-marker | ✅ | ❌ | ❌ | ❌ | Babylon.js |
-| babylon-markerless-image | ❌ | ✅ | ❌ | ❌ | Babylon.js |
-| three-aruco-marker | ✅ | ❌ | ❌ | ❌ | Three.js |
-| three-markerless-image | ❌ | ✅ | ❌ | ❌ | Three.js |
-
-Legend: ✅ Implemented | 🔄 Requires Setup | ❌ Not included
-
----
+This directory contains production-ready examples demonstrating the V2.0.0 plugin-based architecture.
 
 ## 🚀 Quick Start
 
-### Minimal ArUco Marker Code
+All examples use the V2 API with plugins. Simply open any HTML file in a WebGPU-compatible browser:
 
+```bash
+# Using a local server (recommended)
+python3 -m http.server 8000
+# or
+npx serve .
+
+# Then open: http://localhost:8000/examples/01-basic-marker-tracking.html
+```
+
+## 📚 Examples
+
+### 01 - Basic Marker Tracking
+**File**: `01-basic-marker-tracking.html`
+
+The simplest example showing:
+- AREngine initialization
+- MarkerTrackingPlugin usage
+- Event-based API (marker:detected, frame, error)
+- No 3D rendering, just tracking
+
+**Key Features**:
+- Event-driven architecture
+- Plugin configuration
+- FPS monitoring
+- Marker confidence display
+
+**Code Snippet**:
+```javascript
+import { AREngine, MarkerTrackingPlugin } from '../dist/index.js';
+
+const ar = new AREngine()
+  .use(new MarkerTrackingPlugin({
+    dictionary: 'ARUCO_4X4_50',
+    markerSize: 0.1,
+  }));
+
+ar.on('marker:detected', (marker) => {
+  console.log('Marker:', marker.id, marker.pose);
+});
+
+await ar.initialize();
+await ar.start();
+```
+
+---
+
+### 02 - Babylon.js Marker Tracking
+**File**: `02-babylon-marker-tracking.html`
+
+Full 3D integration with Babylon.js:
+- Animated 3D cubes on markers
+- Marker lifecycle (detected, tracked, lost)
+- Transform updates (position, rotation)
+- Multi-marker support
+
+**Key Features**:
+- Babylon.js scene integration
+- TransformNode anchors
+- Automatic marker removal
+- Downloadable test markers
+
+---
+
+### 03 - Three.js Marker Tracking
+**File**: `03-three-marker-tracking.html`
+
+Three.js version of marker tracking:
+- Three.js scene setup
+- Group-based anchors
+- WebGL rendering
+- Same V2 API
+
+**Key Features**:
+- Three.js integration
+- Mesh animations
+- Responsive canvas
+
+---
+
+### 04 - Plugin Architecture Demo
+**File**: `04-plugin-architecture.html`
+
+Interactive plugin system demonstration:
+- Dynamic plugin loading
+- Multiple plugins (Marker + Depth + Mesh)
+- Event logging
+- Statistics dashboard
+- Start/stop/destroy lifecycle
+
+**Key Features**:
+- Plugin enable/disable UI
+- Real-time event log
+- Performance stats
+- Full lifecycle control
+
+**Demonstrates**:
+- Plugin registration
+- Event system
+- Error handling with ARError
+- Engine lifecycle
+
+---
+
+### 05 - Depth Estimation
+**File**: `05-depth-estimation.html`
+
+Real-time depth map visualization:
+- DepthEstimationPlugin
+- Quality settings (low/medium/high)
+- Color-mapped depth display
+- Performance monitoring
+
+**Key Features**:
+- Depth map visualization (turbo colormap)
+- FPS counter
+- Resolution display
+- Quality presets
+
+---
+
+### 06 - Mesh Reconstruction
+**File**: `06-mesh-reconstruction.html`
+
+3D mesh reconstruction from depth:
+- MeshReconstructionPlugin + DepthEstimationPlugin
+- TSDF voxel grid
+- Marching cubes extraction
+- Babylon.js mesh rendering
+
+**Key Features**:
+- Real-time mesh updates
+- Voxel statistics
+- Manual extraction
+- Reset functionality
+
+---
+
+## 🎯 Browser Requirements
+
+| Browser | Version | Status |
+|---------|---------|--------|
+| Chrome  | 113+    | ✅ Supported |
+| Edge    | 113+    | ✅ Supported |
+| Safari  | 18+     | ⏳ Experimental |
+| Firefox | -       | ❌ Not yet |
+
+**Requirements**:
+- WebGPU support
+- Webcam access
+- HTTPS (or localhost)
+
+---
+
+## 🔧 Common Patterns
+
+### Basic Setup
+```javascript
+import { AREngine, MarkerTrackingPlugin } from '../dist/index.js';
+
+const ar = new AREngine()
+  .use(new MarkerTrackingPlugin({ /* config */ }));
+
+ar.on('marker:detected', (marker) => { /* ... */ });
+await ar.initialize();
+await ar.start();
+```
+
+### Multiple Plugins
+```javascript
+const ar = new AREngine()
+  .use(new MarkerTrackingPlugin({ /* ... */ }))
+  .use(new DepthEstimationPlugin({ /* ... */ }))
+  .use(new MeshReconstructionPlugin({ /* ... */ }));
+```
+
+### Error Handling
+```javascript
+ar.on('error', (error) => {
+  console.error('AR Error:', error.message);
+
+  if (error instanceof ARError) {
+    console.log('Error code:', error.code);
+    console.log('Recoverable:', error.recoverable);
+
+    for (const suggestion of error.suggestions) {
+      console.log('💡', suggestion.message);
+    }
+  }
+});
+```
+
+### Lifecycle Management
+```javascript
+// Initialize
+await ar.initialize();
+
+// Start processing
+await ar.start();
+
+// Pause
+ar.stop();
+
+// Resume
+await ar.start();
+
+// Cleanup
+await ar.destroy();
+```
+
+---
+
+## 🎨 Creating Custom Examples
+
+### Template Structure
 ```html
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <meta charset="UTF-8">
+  <title>My AR Example - BabylonJS AR V2</title>
+  <style>
+    /* Your styles */
+  </style>
 </head>
 <body>
-  <canvas id="renderCanvas" style="width:100vw; height:100vh;"></canvas>
+  <!-- Your UI -->
 
   <script type="module">
-    import { ARBuilder } from './path/to/dist/index.js';
+    import { AREngine, /* plugins */ } from '../dist/index.js';
 
-    // Create Babylon.js scene
-    const canvas = document.getElementById('renderCanvas');
-    const engine = new BABYLON.Engine(canvas);
-    const scene = new BABYLON.Scene(engine);
+    async function initAR() {
+      const ar = new AREngine()
+        .use(/* your plugins */);
 
-    // Camera and light
-    const camera = new BABYLON.ArcRotateCamera('cam', 0, 0, 5, BABYLON.Vector3.Zero(), scene);
-    camera.attachControl(canvas);
-    new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), scene);
+      ar.on('event', (data) => { /* ... */ });
 
-    // Store marker anchors
-    const anchors = new Map();
+      await ar.initialize();
+      await ar.start();
+    }
 
-    // Setup AR with markers
-    const ar = await ARBuilder
-      .preset('desktop')
-      .enableMarkers()
-      .onFrame((frame) => {
-        if (!frame.markers) return;
-
-        for (const marker of frame.markers) {
-          // Create cube for new marker
-          if (!anchors.has(marker.id)) {
-            const box = BABYLON.MeshBuilder.CreateBox('box', { size: 0.05 }, scene);
-            box.position = new BABYLON.Vector3(
-              marker.pose.position.x,
-              marker.pose.position.y,
-              marker.pose.position.z
-            );
-            anchors.set(marker.id, box);
-          }
-        }
-      })
-      .build();
-
-    // Render loop
-    engine.runRenderLoop(() => scene.render());
+    initAR();
   </script>
 </body>
 </html>
 ```
 
-### Minimal Plane Detection Code
+### Plugin Configuration
 
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <script src="https://cdn.babylonjs.com/babylon.js"></script>
-</head>
-<body>
-  <canvas id="renderCanvas" style="width:100vw; height:100vh;"></canvas>
-  <input type="file" id="upload" accept="image/*">
+**MarkerTrackingPlugin**:
+```javascript
+new MarkerTrackingPlugin({
+  dictionary: 'ARUCO_4X4_50',  // or '5X5_100', '6X6_250'
+  markerSize: 0.1,              // meters
+  enableFiltering: true,
+  minConfidence: 0.7,
+  maxMarkers: 10,
+})
+```
 
-  <script type="module">
-    import { ARBuilder } from './path/to/dist/index.js';
+**DepthEstimationPlugin**:
+```javascript
+new DepthEstimationPlugin({
+  quality: 'medium',            // 'low', 'medium', 'high'
+  inferenceInterval: 100,       // ms between inferences
+})
+```
 
-    // Create scene
-    const canvas = document.getElementById('renderCanvas');
-    const engine = new BABYLON.Engine(canvas);
-    const scene = new BABYLON.Scene(engine);
-
-    const camera = new BABYLON.ArcRotateCamera('cam', 0, 0, 5, BABYLON.Vector3.Zero(), scene);
-    camera.attachControl(canvas);
-    new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), scene);
-
-    // Setup AR with planes
-    const ar = await ARBuilder
-      .preset('desktop')
-      .enablePlanes()
-      .onFrame((frame) => {
-        if (!frame.planes) return;
-
-        for (const plane of frame.planes) {
-          // Create object on plane
-          const sphere = BABYLON.MeshBuilder.CreateSphere('sphere', { diameter: 0.3 }, scene);
-          sphere.position = new BABYLON.Vector3(
-            plane.centroid.x,
-            plane.centroid.y,
-            plane.centroid.z
-          );
-        }
-      })
-      .build();
-
-    engine.runRenderLoop(() => scene.render());
-  </script>
-</body>
-</html>
+**MeshReconstructionPlugin**:
+```javascript
+new MeshReconstructionPlugin({
+  voxelSize: 0.01,              // meters
+  truncationDistance: 0.05,     // meters
+  extractionInterval: 30,       // frames
+  autoExtract: true,
+})
 ```
 
 ---
 
-## 📚 Documentation
+## 📖 Documentation
 
-### BabylonAR Adapter
-
-For more advanced integration, use the `BabylonAR` adapter:
-
-```javascript
-import { createBabylonAR } from 'babylonjs-ar';
-
-const ar = await createBabylonAR({
-  preset: 'desktop',
-  enableMarkers: true,
-  onMarkerDetected: (marker, anchor) => {
-    // anchor is a Babylon.js TransformNode
-    // Add meshes as children
-    const box = BABYLON.MeshBuilder.CreateBox('box', { size: 0.1 }, ar.scene);
-    box.parent = anchor;
-  },
-});
-
-// Access Babylon.js scene
-ar.scene.clearColor = new BABYLON.Color4(0, 0, 0, 1);
-
-// Get marker anchor
-const anchor = ar.getMarkerAnchor(0);
-```
-
----
-
-## 🎨 Customization
-
-### Change Cube Colors
-
-```javascript
-const mat = new BABYLON.StandardMaterial('mat', scene);
-mat.diffuseColor = new BABYLON.Color3(1, 0, 0); // Red
-box.material = mat;
-```
-
-### Add Physics
-
-```javascript
-box.physicsImpostor = new BABYLON.PhysicsImpostor(
-  box,
-  BABYLON.PhysicsImpostor.BoxImpostor,
-  { mass: 1, restitution: 0.9 },
-  scene
-);
-```
-
-### Add Animations
-
-```javascript
-scene.registerBeforeRender(() => {
-  box.rotation.y += 0.02;
-  box.position.y = Math.sin(Date.now() / 1000) * 0.1;
-});
-```
+- [Main README](../README.md)
+- [Breaking Changes V2](../BREAKING-CHANGES-V2.md)
+- [Contributing Guide](../CONTRIBUTING.md)
+- [V2 Refactoring Complete](../V2-REFACTORING-COMPLETE.md)
 
 ---
 
 ## 🐛 Troubleshooting
 
-### Camera not working
-- Ensure HTTPS or localhost
-- Allow camera permissions
-- Check browser supports WebGPU (Chrome 113+, Edge 113+)
+### WebGPU Not Available
+- Upgrade to Chrome 113+ or Edge 113+
+- Enable flags: `chrome://flags/#enable-unsafe-webgpu`
 
-### Markers not detected
-- Print marker at least 5cm × 5cm
-- Ensure good lighting
-- Keep marker flat and unobstructed
-- Use correct dictionary size (4x4, 5x5, or 6x6)
-- Verify marker ID is within supported range
+### Camera Permission Denied
+- Check browser permissions
+- Use HTTPS or localhost
+- Try different browser
 
-### Image upload not working
-- Use JPG or PNG format
-- Image should have clear, flat surfaces
-- Good lighting and texture in photo
+### Poor Performance
+- Lower quality settings
+- Reduce inference intervals
+- Check GPU usage in DevTools
 
-### Performance issues
-- Use `preset('mobile')` on slower devices
-- Reduce camera resolution
-- Disable unused features
+### Import Errors
+- Build the library first: `bun run build`
+- Check dist/ directory exists
+- Use a local server (not file://)
 
 ---
 
-## 📖 Additional Resources
+## 💡 Tips
 
-- [Developer Guide](../docs/DEVELOPER_GUIDE.md)
-- [API Reference](../docs/API.md)
-- [Babylon.js Documentation](https://doc.babylonjs.com/)
+1. **Always use a local server** - Don't open files directly (file://), use http://localhost
+2. **Check the console** - All examples log helpful info to console
+3. **Test with real markers** - Download from [ArUco Generator](https://chev.me/arucogen/)
+4. **Print markers properly** - Use 4x4 dictionary, white border, flat surface
+5. **Good lighting helps** - Marker detection works best in good lighting
+
+---
+
+## 🔗 Resources
+
 - [ArUco Marker Generator](https://chev.me/arucogen/)
+- [WebGPU Status](https://webgpustatus.org/)
+- [Babylon.js Docs](https://doc.babylonjs.com/)
+- [Three.js Docs](https://threejs.org/docs/)
 
 ---
 
-## 💡 Tips & Best Practices
-
-1. **Lighting:** AR works best with good, even lighting
-2. **Marker Size:** Print markers at least 5-10cm for best detection
-3. **Image Quality:** Use high-quality photos with clear textures
-4. **Performance:** Start with mobile preset, upgrade if performance allows
-5. **Testing:** Test with multiple markers/planes before deploying
-
----
-
-## 🆘 Need Help?
-
-- **Issues:** https://github.com/anthropics/babylonjs-ar/issues
-- **Discussions:** https://github.com/anthropics/babylonjs-ar/discussions
-- **Examples:** Try the examples in this directory first!
-
----
-
-**Have fun building AR experiences! 🚀**
+**Built with BabylonJS AR V2.0.0** 🚀

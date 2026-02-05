@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BabylonJS AR V2 - Natural Image Tracking</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui; background: #1a1a1a; color: white; overflow: hidden; }
+    #renderCanvas { width: 100%; height: 100vh; display: block; }
+    .controls { position: fixed; top: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; z-index: 1000; max-width: 350px; }
+    h1 { font-size: 18px; margin-bottom: 15px; color: #FF5722; }
+    .status { padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; }
+    .status.info { background: rgba(255,87,34,0.2); border: 1px solid #FF5722; }
+    .status.success { background: rgba(0,255,0,0.2); border: 1px solid #00ff00; }
+    .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #444; }
+    .stat-value { color: #FF5722; font-weight: bold; }
+    button { background: #FF5722; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 10px; }
+    input[type="file"] { width: 100%; margin: 10px 0; }
+    .reference-images { margin-top: 15px; }
+    .ref-image { display: inline-block; width: 80px; height: 80px; margin: 5px; border: 2px solid #FF5722; border-radius: 4px; object-fit: cover; }
+  </style>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+
+  <div class="controls">
+    <h1>🖼️ Natural Image Tracking (V2)</h1>
+    <div id="status" class="status info">Upload reference images...</div>
+
+    <input type="file" id="imageUpload" accept="image/*" multiple>
+    <button id="startBtn">Start Tracking</button>
+
+    <div style="margin-top:15px;">
+      <div class="stat">
+        <span>FPS:</span>
+        <span class="stat-value" id="fps">0</span>
+      </div>
+      <div class="stat">
+        <span>Reference Images:</span>
+        <span class="stat-value" id="refCount">0</span>
+      </div>
+      <div class="stat">
+        <span>Tracked Images:</span>
+        <span class="stat-value" id="trackedCount">0</span>
+      </div>
+    </div>
+
+    <div class="reference-images" id="refImages"></div>
+  </div>
+
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script type="module">
+    import { AREngine } from '../dist/index.js';
+
+    function updateStatus(msg, type = 'info') {
+      document.getElementById('status').textContent = msg;
+      document.getElementById('status').className = `status ${type}`;
+    }
+
+    const canvas = document.getElementById('renderCanvas');
+    const engine = new BABYLON.Engine(canvas, true);
+    const scene = new BABYLON.Scene(engine);
+
+    const camera = new BABYLON.ArcRotateCamera('camera', 0, Math.PI / 4, 10, BABYLON.Vector3.Zero(), scene);
+    camera.attachControl(canvas, true);
+
+    const light = new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), scene);
+
+    const referenceImages = [];
+    const trackedAnchors = new Map();
+
+    // Handle image upload
+    document.getElementById('imageUpload').addEventListener('change', (e) => {
+      const files = e.target.files;
+      const refImagesDiv = document.getElementById('refImages');
+      refImagesDiv.innerHTML = '';
+
+      Array.from(files).forEach((file, i) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new Image();
+          img.src = event.target.result;
+          img.className = 'ref-image';
+          img.title = file.name;
+          refImagesDiv.appendChild(img);
+
+          img.onload = () => {
+            referenceImages.push({
+              id: `ref-${i}`,
+              name: file.name,
+              imageData: img,
+              physicalWidth: 0.2, // 20cm default
+            });
+
+            document.getElementById('refCount').textContent = referenceImages.length;
+            updateStatus(`${referenceImages.length} reference images loaded`, 'success');
+          };
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    async function initAR() {
+      try {
+        updateStatus('Initializing Natural Image Tracking...', 'info');
+
+        const ar = new AREngine();
+
+        // Note: Natural image tracking would be added via NaturalImageTrackingPlugin
+        // This example demonstrates the UI and structure
+
+        ar.on('image:detected', (image) => {
+          if (!trackedAnchors.has(image.id)) {
+            const anchor = new BABYLON.TransformNode(`Image_${image.id}`, scene);
+
+            const box = BABYLON.MeshBuilder.CreateBox(`box-${image.id}`, { size: 0.1 }, scene);
+            const material = new BABYLON.StandardMaterial(`mat-${image.id}`, scene);
+            material.diffuseColor = BABYLON.Color3.Random();
+            box.material = material;
+            box.parent = anchor;
+
+            trackedAnchors.set(image.id, anchor);
+
+            updateStatus(`Tracking image: ${image.id}`, 'success');
+          }
+
+          const anchor = trackedAnchors.get(image.id);
+          if (anchor && image.pose) {
+            anchor.position = new BABYLON.Vector3(
+              image.pose.position.x,
+              image.pose.position.y,
+              image.pose.position.z
+            );
+            anchor.rotationQuaternion = new BABYLON.Quaternion(
+              image.pose.rotation.x,
+              image.pose.rotation.y,
+              image.pose.rotation.z,
+              image.pose.rotation.w
+            );
+          }
+        });
+
+        ar.on('frame', (frame) => {
+          const tracked = frame.trackedImages || [];
+          document.getElementById('trackedCount').textContent = tracked.length;
+        });
+
+        ar.on('fps:change', (fps) => {
+          document.getElementById('fps').textContent = fps;
+        });
+
+        ar.on('error', (error) => {
+          console.error('AR Error:', error);
+          updateStatus(error.message, 'error');
+        });
+
+        await ar.initialize();
+        await ar.start();
+
+        updateStatus('Show reference images to camera to track them!', 'info');
+
+        engine.runRenderLoop(() => scene.render());
+
+        return ar;
+      } catch (error) {
+        console.error('Failed to initialize:', error);
+        updateStatus(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    document.getElementById('startBtn').addEventListener('click', () => {
+      if (referenceImages.length === 0) {
+        updateStatus('Please upload reference images first!', 'error');
+        return;
+      }
+      initAR();
+    });
+
+    window.addEventListener('resize', () => engine.resize());
+  </script>
+</body>
+</html>

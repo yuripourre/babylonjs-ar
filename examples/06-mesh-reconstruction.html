@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BabylonJS AR V2 - Mesh Reconstruction</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui; background: #1a1a1a; color: white; overflow: hidden; }
+    #renderCanvas { width: 100%; height: 100vh; display: block; }
+    .controls { position: fixed; top: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; z-index: 1000; max-width: 350px; }
+    h1 { font-size: 18px; margin-bottom: 15px; color: #2196F3; }
+    .status { padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; }
+    .status.info { background: rgba(0,150,255,0.2); border: 1px solid #0096ff; }
+    .status.success { background: rgba(0,255,0,0.2); border: 1px solid #00ff00; }
+    .status.error { background: rgba(255,0,0,0.2); border: 1px solid #ff0000; }
+    .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #444; }
+    .stat-label { color: #aaa; }
+    .stat-value { color: #2196F3; font-weight: bold; }
+    button { background: #2196F3; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+
+  <div class="controls">
+    <h1>🎨 Mesh Reconstruction (V2)</h1>
+    <div id="status" class="status info">Initializing...</div>
+
+    <div style="margin-top:15px;">
+      <div class="stat">
+        <span class="stat-label">FPS:</span>
+        <span class="stat-value" id="fps">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Voxels:</span>
+        <span class="stat-value" id="voxelCount">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Vertices:</span>
+        <span class="stat-value" id="vertexCount">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Triangles:</span>
+        <span class="stat-value" id="triangleCount">0</span>
+      </div>
+    </div>
+
+    <button id="extractBtn">Extract Mesh Now</button>
+    <button id="resetBtn">Reset</button>
+  </div>
+
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script type="module">
+    import { AREngine, DepthEstimationPlugin, MeshReconstructionPlugin } from '../dist/index.js';
+
+    function updateStatus(msg, type = 'info') {
+      document.getElementById('status').textContent = msg;
+      document.getElementById('status').className = `status ${type}`;
+    }
+
+    // Create Babylon.js scene
+    const canvas = document.getElementById('renderCanvas');
+    const engine = new BABYLON.Engine(canvas, true);
+    const scene = new BABYLON.Scene(engine);
+
+    // Camera
+    const camera = new BABYLON.ArcRotateCamera('camera', 0, Math.PI / 4, 5, BABYLON.Vector3.Zero(), scene);
+    camera.attachControl(canvas, true);
+
+    // Light
+    const light = new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), scene);
+
+    // Store reconstructed mesh
+    let reconstructedMesh = null;
+
+    async function initAR() {
+      try {
+        updateStatus('Initializing AR Engine...', 'info');
+
+        const ar = new AREngine()
+          .use(new DepthEstimationPlugin({
+            quality: 'medium',
+            inferenceInterval: 100,
+          }))
+          .use(new MeshReconstructionPlugin({
+            voxelSize: 0.01,
+            truncationDistance: 0.05,
+            extractionInterval: 30,
+            autoExtract: true,
+          }));
+
+        ar.on('mesh:updated', (mesh) => {
+          document.getElementById('voxelCount').textContent = mesh.voxelCount || 0;
+          document.getElementById('vertexCount').textContent = mesh.vertices?.length || 0;
+          document.getElementById('triangleCount').textContent = mesh.triangles?.length || 0;
+
+          // Update Babylon.js mesh
+          if (mesh.vertices && mesh.vertices.length > 0) {
+            if (reconstructedMesh) {
+              reconstructedMesh.dispose();
+            }
+
+            const vertexData = new BABYLON.VertexData();
+            const positions = [];
+            const indices = [];
+
+            for (const v of mesh.vertices) {
+              positions.push(v.position.x, v.position.y, v.position.z);
+            }
+
+            for (const tri of mesh.triangles) {
+              indices.push(tri.vertices[0], tri.vertices[1], tri.vertices[2]);
+            }
+
+            vertexData.positions = positions;
+            vertexData.indices = indices;
+            vertexData.applyToMesh(reconstructedMesh = new BABYLON.Mesh('reconstructed', scene));
+
+            const material = new BABYLON.StandardMaterial('meshMat', scene);
+            material.diffuseColor = new BABYLON.Color3(0.3, 0.7, 1.0);
+            material.wireframe = true;
+            reconstructedMesh.material = material;
+
+            updateStatus('Mesh updated!', 'success');
+          }
+        });
+
+        ar.on('fps:change', (fps) => {
+          document.getElementById('fps').textContent = fps;
+        });
+
+        ar.on('error', (error) => {
+          console.error('AR Error:', error);
+          updateStatus(error.message, 'error');
+        });
+
+        await ar.initialize();
+        updateStatus('AR Engine initialized!', 'success');
+
+        await ar.start();
+        updateStatus('AR Engine running!', 'success');
+
+        // Start render loop
+        engine.runRenderLoop(() => scene.render());
+
+        // Button handlers
+        document.getElementById('extractBtn').onclick = () => {
+          ar.emit?.('mesh:extract');
+        };
+
+        document.getElementById('resetBtn').onclick = () => {
+          if (reconstructedMesh) {
+            reconstructedMesh.dispose();
+            reconstructedMesh = null;
+          }
+          ar.emit?.('mesh:reset');
+          updateStatus('Reset complete', 'info');
+        };
+
+        return ar;
+      } catch (error) {
+        console.error('Failed to initialize:', error);
+        updateStatus(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    initAR();
+    window.addEventListener('resize', () => engine.resize());
+  </script>
+</body>
+</html>

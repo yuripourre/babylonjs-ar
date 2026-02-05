@@ -5,139 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AR Engine V2 - Plugin Architecture Demo</title>
   <style>
-    body {
-      margin: 0;
-      padding: 20px;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #1a1a1a;
-      color: #fff;
-    }
-
-    h1 {
-      margin: 0 0 20px 0;
-      color: #4CAF50;
-    }
-
-    #container {
-      display: flex;
-      gap: 20px;
-    }
-
-    #video-container {
-      flex: 1;
-      position: relative;
-      background: #000;
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    video {
-      width: 100%;
-      height: auto;
-      display: block;
-    }
-
-    #controls {
-      width: 350px;
-      background: #2a2a2a;
-      padding: 20px;
-      border-radius: 8px;
-    }
-
-    .section {
-      margin-bottom: 20px;
-      padding: 15px;
-      background: #333;
-      border-radius: 4px;
-    }
-
-    .section h3 {
-      margin: 0 0 10px 0;
-      color: #4CAF50;
-      font-size: 14px;
-      text-transform: uppercase;
-    }
-
-    button {
-      width: 100%;
-      padding: 12px;
-      margin: 5px 0;
-      background: #4CAF50;
-      border: none;
-      border-radius: 4px;
-      color: white;
-      cursor: pointer;
-      font-size: 14px;
-      transition: background 0.2s;
-    }
-
-    button:hover:not(:disabled) {
-      background: #45a049;
-    }
-
-    button:disabled {
-      background: #666;
-      cursor: not-allowed;
-    }
-
-    .checkbox-group {
-      display: flex;
-      align-items: center;
-      margin: 10px 0;
-      padding: 8px;
-      background: #444;
-      border-radius: 4px;
-    }
-
-    .checkbox-group input {
-      margin-right: 10px;
-    }
-
-    .stat {
-      display: flex;
-      justify-content: space-between;
-      padding: 8px 0;
-      border-bottom: 1px solid #444;
-    }
-
-    .stat:last-child {
-      border-bottom: none;
-    }
-
-    .stat-label {
-      color: #aaa;
-    }
-
-    .stat-value {
-      color: #4CAF50;
-      font-weight: bold;
-    }
-
-    #log {
-      height: 200px;
-      overflow-y: auto;
-      background: #1a1a1a;
-      padding: 10px;
-      border-radius: 4px;
-      font-family: 'Courier New', monospace;
-      font-size: 12px;
-    }
-
-    .log-entry {
-      margin: 2px 0;
-    }
-
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui; background: #1a1a1a; color: white; padding: 20px; }
+    h1 { margin-bottom: 20px; color: #4CAF50; }
+    #container { display: flex; gap: 20px; }
+    #controls { width: 350px; background: #2a2a2a; padding: 20px; border-radius: 8px; }
+    .section { margin-bottom: 20px; padding: 15px; background: #333; border-radius: 4px; }
+    .section h3 { margin: 0 0 10px 0; color: #4CAF50; font-size: 14px; text-transform: uppercase; }
+    button { width: 100%; padding: 12px; margin: 5px 0; background: #4CAF50; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 14px; }
+    button:hover:not(:disabled) { background: #45a049; }
+    button:disabled { background: #666; cursor: not-allowed; }
+    .checkbox-group { display: flex; align-items: center; margin: 10px 0; padding: 8px; background: #444; border-radius: 4px; }
+    .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #444; }
+    .stat-label { color: #aaa; }
+    .stat-value { color: #4CAF50; font-weight: bold; }
+    #log { height: 200px; overflow-y: auto; background: #1a1a1a; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; }
+    .log-entry { margin: 2px 0; }
     .log-info { color: #4CAF50; }
     .log-warn { color: #FFC107; }
     .log-error { color: #f44336; }
-
-    .status {
-      padding: 10px;
-      border-radius: 4px;
-      text-align: center;
-      margin-bottom: 15px;
-    }
-
+    .status { padding: 10px; border-radius: 4px; text-align: center; margin-bottom: 15px; }
     .status-ready { background: #4CAF50; }
     .status-running { background: #2196F3; }
     .status-error { background: #f44336; }
@@ -147,10 +34,6 @@
   <h1>🚀 AR Engine V2 - Plugin Architecture</h1>
 
   <div id="container">
-    <div id="video-container">
-      <video id="video" autoplay playsinline></video>
-    </div>
-
     <div id="controls">
       <div class="status status-ready" id="status">Ready to start</div>
 
@@ -205,26 +88,17 @@
   </div>
 
   <script type="module">
-    import { AREngineV2 } from '../dist/babylonjs-ar.js';
-    import {
-      MarkerTrackingPlugin,
-      DepthEstimationPlugin,
-      MeshReconstructionPlugin
-    } from '../dist/plugins/index.js';
+    import { AREngine, MarkerTrackingPlugin, DepthEstimationPlugin, MeshReconstructionPlugin } from '../dist/index.js';
 
-    // UI Elements
-    const video = document.getElementById('video');
     const status = document.getElementById('status');
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const destroyBtn = document.getElementById('destroyBtn');
     const logDiv = document.getElementById('log');
 
-    // State
     let ar = null;
     let markerCount = 0;
 
-    // Logging
     function addLog(message, type = 'info') {
       const entry = document.createElement('div');
       entry.className = `log-entry log-${type}`;
@@ -232,28 +106,23 @@
       logDiv.appendChild(entry);
       logDiv.scrollTop = logDiv.scrollHeight;
 
-      // Keep only last 50 entries
       while (logDiv.children.length > 50) {
         logDiv.removeChild(logDiv.firstChild);
       }
     }
 
-    // Status
     function setStatus(text, className) {
       status.textContent = text;
       status.className = `status ${className}`;
     }
 
-    // Initialize and start
     async function initializeAndStart() {
       try {
         addLog('Creating AR Engine V2...', 'info');
         setStatus('Initializing...', 'status-running');
 
-        // Create AR engine
-        ar = new AREngineV2();
+        ar = new AREngine();
 
-        // Register selected plugins
         if (document.getElementById('markerPlugin').checked) {
           ar.use(new MarkerTrackingPlugin({
             dictionary: 'ARUCO_4X4_50',
@@ -278,7 +147,6 @@
           addLog('✓ Mesh reconstruction plugin registered', 'info');
         }
 
-        // Setup event listeners
         ar.on('ready', () => {
           addLog('🎉 AR engine ready!', 'info');
           setStatus('Running', 'status-running');
@@ -317,21 +185,16 @@
           addLog(message, 'warn');
         });
 
-        // Initialize
         addLog('Initializing...', 'info');
-        await ar.initialize({
-          gpu: { powerPreference: 'high-performance' },
-        });
+        await ar.initialize();
 
-        // Update stats
-        const stats = ar.getStats();
-        document.getElementById('pluginCount').textContent = stats.plugins.totalPlugins;
+        const pluginManager = ar.getPluginManager?.() || { getPlugins: () => [] };
+        const plugins = pluginManager.getPlugins?.() || [];
+        document.getElementById('pluginCount').textContent = plugins.length;
 
-        // Start
         addLog('Starting AR processing...', 'info');
         await ar.start();
 
-        // Update UI
         startBtn.disabled = true;
         stopBtn.disabled = false;
         destroyBtn.disabled = false;
@@ -351,7 +214,6 @@
       }
     }
 
-    // Stop
     function stop() {
       if (ar) {
         ar.stop();
@@ -361,7 +223,6 @@
       }
     }
 
-    // Destroy
     async function destroy() {
       if (ar) {
         await ar.destroy();
@@ -373,7 +234,6 @@
         stopBtn.disabled = true;
         destroyBtn.disabled = true;
 
-        // Reset stats
         document.getElementById('frameCount').textContent = '0';
         document.getElementById('fps').textContent = '0';
         document.getElementById('pluginCount').textContent = '0';
@@ -382,12 +242,10 @@
       }
     }
 
-    // Event listeners
     startBtn.addEventListener('click', initializeAndStart);
     stopBtn.addEventListener('click', stop);
     destroyBtn.addEventListener('click', destroy);
 
-    // Initial log
     addLog('AR Engine V2 - Plugin Architecture Demo', 'info');
     addLog('Select plugins and click "Initialize & Start"', 'info');
   </script>

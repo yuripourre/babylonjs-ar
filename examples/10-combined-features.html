@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BabylonJS AR V2 - Combined Features Showcase</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui; background: #1a1a1a; color: white; overflow: hidden; }
+    #renderCanvas { width: 100%; height: 100vh; display: block; }
+    .controls { position: fixed; top: 20px; left: 20px; background: rgba(0,0,0,0.9); padding: 20px; border-radius: 10px; z-index: 1000; max-width: 400px; max-height: 90vh; overflow-y: auto; }
+    h1 { font-size: 18px; margin-bottom: 15px; color: #FFC107; }
+    .status { padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; }
+    .status.info { background: rgba(255,193,7,0.2); border: 1px solid #FFC107; }
+    .status.success { background: rgba(0,255,0,0.2); border: 1px solid #00ff00; }
+    .feature-toggle { margin: 10px 0; padding: 10px; background: rgba(255,193,7,0.1); border-radius: 5px; }
+    .feature-toggle label { display: flex; align-items: center; cursor: pointer; }
+    .feature-toggle input { margin-right: 10px; }
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+    .stat-box { padding: 10px; background: rgba(255,193,7,0.1); border-radius: 5px; border-left: 3px solid #FFC107; }
+    .stat-label { font-size: 11px; opacity: 0.7; text-transform: uppercase; }
+    .stat-value { font-size: 20px; font-weight: bold; color: #FFC107; margin-top: 5px; }
+    button { background: #FFC107; color: black; border: none; padding: 12px 20px; border-radius: 5px; cursor: pointer; width: 100%; margin: 5px 0; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+
+  <div class="controls">
+    <h1>🎨 Combined Features Showcase</h1>
+    <div id="status" class="status info">Configure features and start...</div>
+
+    <div class="feature-toggle">
+      <label>
+        <input type="checkbox" id="markersToggle" checked>
+        <span><strong>Marker Tracking</strong> - Track ArUco markers</span>
+      </label>
+    </div>
+
+    <div class="feature-toggle">
+      <label>
+        <input type="checkbox" id="depthToggle" checked>
+        <span><strong>Depth Estimation</strong> - Real-time depth maps</span>
+      </label>
+    </div>
+
+    <div class="feature-toggle">
+      <label>
+        <input type="checkbox" id="meshToggle">
+        <span><strong>Mesh Reconstruction</strong> - 3D scene reconstruction</span>
+      </label>
+    </div>
+
+    <button id="startBtn">Start AR Session</button>
+    <button id="stopBtn" disabled>Stop AR Session</button>
+
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-label">FPS</div>
+        <div class="stat-value" id="fps">0</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Markers</div>
+        <div class="stat-value" id="markerCount">0</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Depth Maps</div>
+        <div class="stat-value" id="depthCount">0</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Voxels</div>
+        <div class="stat-value" id="voxelCount">0</div>
+      </div>
+    </div>
+
+    <div style="margin-top:15px;padding:10px;background:rgba(255,193,7,0.1);border-radius:5px;font-size:12px;">
+      <strong>💡 Tip:</strong> This example demonstrates multiple AR features working together. Enable/disable features to see different capabilities.
+    </div>
+  </div>
+
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script type="module">
+    import { AREngine, MarkerTrackingPlugin, DepthEstimationPlugin, MeshReconstructionPlugin } from '../dist/index.js';
+
+    function updateStatus(msg, type = 'info') {
+      document.getElementById('status').textContent = msg;
+      document.getElementById('status').className = `status ${type}`;
+    }
+
+    const canvas = document.getElementById('renderCanvas');
+    const engine = new BABYLON.Engine(canvas, true);
+    const scene = new BABYLON.Scene(engine);
+
+    const camera = new BABYLON.ArcRotateCamera('camera', 0, Math.PI / 4, 10, BABYLON.Vector3.Zero(), scene);
+    camera.attachControl(canvas, true);
+
+    const light = new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), scene);
+    light.intensity = 1.5;
+
+    let ar = null;
+    const markerCubes = new Map();
+    let reconstructedMesh = null;
+
+    function createMarkerCube(markerId) {
+      const anchor = new BABYLON.TransformNode(`Marker_${markerId}`, scene);
+
+      const box = BABYLON.MeshBuilder.CreateBox(`cube-${markerId}`, { size: 0.05 }, scene);
+      const material = new BABYLON.StandardMaterial(`mat-${markerId}`, scene);
+      material.diffuseColor = BABYLON.Color3.Random();
+      material.specularColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+      box.material = material;
+      box.parent = anchor;
+
+      // Add animation
+      let angle = 0;
+      scene.registerBeforeRender(() => {
+        box.rotation.y += 0.02;
+        box.position.y = Math.sin(angle) * 0.02;
+        angle += 0.05;
+      });
+
+      markerCubes.set(markerId, { anchor, box });
+      console.log(`Created cube for marker ${markerId}`);
+      return anchor;
+    }
+
+    async function startAR() {
+      try {
+        updateStatus('Starting AR with enabled features...', 'info');
+
+        ar = new AREngine();
+
+        // Add enabled plugins
+        const markersEnabled = document.getElementById('markersToggle').checked;
+        const depthEnabled = document.getElementById('depthToggle').checked;
+        const meshEnabled = document.getElementById('meshToggle').checked;
+
+        if (markersEnabled) {
+          ar.use(new MarkerTrackingPlugin({
+            dictionary: 'ARUCO_4X4_50',
+            markerSize: 0.1,
+          }));
+          updateStatus('✓ Marker tracking enabled', 'success');
+        }
+
+        if (depthEnabled) {
+          ar.use(new DepthEstimationPlugin({
+            quality: 'medium',
+            inferenceInterval: 100,
+          }));
+          updateStatus('✓ Depth estimation enabled', 'success');
+        }
+
+        if (meshEnabled) {
+          ar.use(new MeshReconstructionPlugin({
+            voxelSize: 0.01,
+            extractionInterval: 30,
+            autoExtract: true,
+          }));
+          updateStatus('✓ Mesh reconstruction enabled', 'success');
+        }
+
+        // Setup event listeners
+        ar.on('marker:detected', (marker) => {
+          if (!markerCubes.has(marker.id)) {
+            createMarkerCube(marker.id);
+          }
+
+          const { anchor } = markerCubes.get(marker.id);
+          if (marker.pose) {
+            anchor.position = new BABYLON.Vector3(
+              marker.pose.position.x,
+              marker.pose.position.y,
+              marker.pose.position.z
+            );
+            anchor.rotationQuaternion = new BABYLON.Quaternion(
+              marker.pose.rotation.x,
+              marker.pose.rotation.y,
+              marker.pose.rotation.z,
+              marker.pose.rotation.w
+            );
+          }
+        });
+
+        let depthCount = 0;
+        ar.on('depth:available', (depthMap) => {
+          depthCount++;
+          document.getElementById('depthCount').textContent = depthCount;
+        });
+
+        ar.on('mesh:updated', (mesh) => {
+          document.getElementById('voxelCount').textContent = mesh.vertices?.length || 0;
+
+          if (mesh.vertices && mesh.vertices.length > 0) {
+            if (reconstructedMesh) {
+              reconstructedMesh.dispose();
+            }
+
+            const vertexData = new BABYLON.VertexData();
+            const positions = [];
+            const indices = [];
+
+            for (const v of mesh.vertices) {
+              positions.push(v.position.x, v.position.y, v.position.z);
+            }
+
+            for (const tri of mesh.triangles) {
+              indices.push(tri.vertices[0], tri.vertices[1], tri.vertices[2]);
+            }
+
+            vertexData.positions = positions;
+            vertexData.indices = indices;
+
+            reconstructedMesh = new BABYLON.Mesh('reconstructed', scene);
+            vertexData.applyToMesh(reconstructedMesh);
+
+            const material = new BABYLON.StandardMaterial('meshMat', scene);
+            material.diffuseColor = new BABYLON.Color3(0.3, 0.7, 1.0);
+            material.wireframe = true;
+            reconstructedMesh.material = material;
+          }
+        });
+
+        ar.on('frame', (frame) => {
+          const markers = frame.markers || [];
+          document.getElementById('markerCount').textContent = markers.length;
+
+          // Remove lost markers
+          const currentMarkerIds = new Set(markers.map(m => m.id));
+          for (const [id, { anchor, box }] of markerCubes) {
+            if (!currentMarkerIds.has(id)) {
+              anchor.dispose();
+              box.dispose();
+              markerCubes.delete(id);
+            }
+          }
+        });
+
+        ar.on('fps:change', (fps) => {
+          document.getElementById('fps').textContent = fps;
+        });
+
+        ar.on('error', (error) => {
+          console.error('AR Error:', error);
+          updateStatus(error.message, 'error');
+        });
+
+        await ar.initialize();
+        await ar.start();
+
+        updateStatus('🚀 AR Session Active! All features running', 'success');
+
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('stopBtn').disabled = false;
+        document.getElementById('markersToggle').disabled = true;
+        document.getElementById('depthToggle').disabled = true;
+        document.getElementById('meshToggle').disabled = true;
+
+        engine.runRenderLoop(() => scene.render());
+
+      } catch (error) {
+        console.error('Failed to start AR:', error);
+        updateStatus(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    function stopAR() {
+      if (ar) {
+        ar.stop();
+        updateStatus('AR Session Stopped', 'info');
+
+        document.getElementById('startBtn').disabled = false;
+        document.getElementById('stopBtn').disabled = true;
+        document.getElementById('markersToggle').disabled = false;
+        document.getElementById('depthToggle').disabled = false;
+        document.getElementById('meshToggle').disabled = false;
+      }
+    }
+
+    document.getElementById('startBtn').addEventListener('click', startAR);
+    document.getElementById('stopBtn').addEventListener('click', stopAR);
+
+    window.addEventListener('resize', () => engine.resize());
+  </script>
+</body>
+</html>

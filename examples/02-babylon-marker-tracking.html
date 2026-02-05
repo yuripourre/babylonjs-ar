@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BabylonJS AR V2 - Marker Tracking with Babylon.js</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui; background: #1a1a1a; color: white; overflow: hidden; }
+    #renderCanvas { width: 100%; height: 100vh; display: block; touch-action: none; }
+    .controls { position: fixed; top: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; z-index: 1000; max-width: 350px; }
+    h1 { font-size: 20px; margin-bottom: 15px; color: #00d9ff; }
+    .status { padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; }
+    .status.info { background: rgba(0,150,255,0.2); border: 1px solid #0096ff; }
+    .status.success { background: rgba(0,255,0,0.2); border: 1px solid #00ff00; }
+    .status.error { background: rgba(255,0,0,0.2); border: 1px solid #ff0000; }
+    .instructions { background: rgba(255, 255, 255, 0.1); padding: 15px; border-radius: 5px; font-size: 13px; line-height: 1.6; margin-top: 15px; }
+    .instructions h3 { font-size: 14px; margin-bottom: 10px; color: #00d9ff; }
+    .instructions ol { margin-left: 20px; }
+    .instructions li { margin-bottom: 8px; }
+    .instructions a { color: #00d9ff; text-decoration: none; }
+    .marker-info { margin-top: 15px; padding: 10px; background: rgba(0, 217, 255, 0.1); border-radius: 5px; font-size: 13px; }
+    .marker-info h4 { color: #00d9ff; margin-bottom: 8px; }
+    .marker-item { padding: 8px; margin: 5px 0; background: rgba(0, 0, 0, 0.3); border-radius: 3px; display: flex; justify-content: space-between; }
+    button { background: #00d9ff; color: black; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+
+  <div class="controls">
+    <h1>🎯 ArUco Marker Tracking (V2)</h1>
+    <div id="status" class="status info">Initializing...</div>
+
+    <div class="marker-info">
+      <h4>📍 Detected Markers:</h4>
+      <div id="markerList">No markers detected</div>
+    </div>
+
+    <div class="instructions">
+      <h3>📋 How to Use:</h3>
+      <ol>
+        <li>Print an ArUco marker from <a href="https://chev.me/arucogen/" target="_blank">ArUco Generator</a></li>
+        <li>Use <strong>4x4 Dictionary</strong>, IDs 0-49</li>
+        <li>Point your camera at the marker</li>
+        <li>A 3D cube will appear on the marker!</li>
+      </ol>
+    </div>
+
+    <button onclick="downloadMarker()">⬇️ Download Test Marker</button>
+  </div>
+
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script type="module">
+    import { AREngine, MarkerTrackingPlugin } from '../dist/index.js';
+
+    function updateStatus(msg, type = 'info') {
+      document.getElementById('status').textContent = msg;
+      document.getElementById('status').className = `status ${type}`;
+    }
+
+    function updateMarkerList(markers) {
+      const listEl = document.getElementById('markerList');
+      if (markers.length === 0) {
+        listEl.innerHTML = '<div style="opacity: 0.6;">No markers detected</div>';
+        return;
+      }
+      listEl.innerHTML = markers.map(m => `
+        <div class="marker-item">
+          <span style="font-weight:bold;color:#00ff00;">Marker ${m.id}</span>
+          <span style="font-size:11px;opacity:0.8;">(${(m.confidence*100).toFixed(0)}%)</span>
+        </div>
+      `).join('');
+    }
+
+    // Create Babylon.js scene
+    const canvas = document.getElementById('renderCanvas');
+    const engine = new BABYLON.Engine(canvas, true);
+    const scene = new BABYLON.Scene(engine);
+
+    // Camera
+    const camera = new BABYLON.ArcRotateCamera('camera', 0, Math.PI / 4, 10, BABYLON.Vector3.Zero(), scene);
+    camera.attachControl(canvas, true);
+
+    // Light
+    const light = new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), scene);
+
+    // Store marker objects
+    const markerAnchors = new Map();
+    const markerMeshes = new Map();
+
+    function createMarkerCube(markerId) {
+      const anchor = new BABYLON.TransformNode(`Marker_${markerId}`, scene);
+      const box = BABYLON.MeshBuilder.CreateBox(`cube_${markerId}`, { size: 0.05 }, scene);
+
+      const material = new BABYLON.StandardMaterial(`mat_${markerId}`, scene);
+      material.diffuseColor = new BABYLON.Color3(Math.random(), Math.random(), Math.random());
+      box.material = material;
+
+      box.parent = anchor;
+
+      scene.registerBeforeRender(() => {
+        box.rotation.y += 0.02;
+        box.rotation.x += 0.01;
+      });
+
+      markerAnchors.set(markerId, anchor);
+      markerMeshes.set(markerId, box);
+
+      console.log(`Created cube for marker ${markerId}`);
+    }
+
+    function updateMarkerTransform(markerId, pose) {
+      const anchor = markerAnchors.get(markerId);
+      if (!anchor || !pose) return;
+
+      anchor.position = new BABYLON.Vector3(pose.position.x, pose.position.y, pose.position.z);
+      anchor.rotationQuaternion = new BABYLON.Quaternion(
+        pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w
+      );
+    }
+
+    function removeMarker(markerId) {
+      const anchor = markerAnchors.get(markerId);
+      const mesh = markerMeshes.get(markerId);
+      if (anchor) anchor.dispose();
+      if (mesh) mesh.dispose();
+      markerAnchors.delete(markerId);
+      markerMeshes.delete(markerId);
+    }
+
+    // Initialize AR Engine (V2 API)
+    async function initAR() {
+      try {
+        updateStatus('Initializing AR Engine...', 'info');
+
+        // Create AR engine with marker tracking plugin
+        const ar = new AREngine()
+          .use(new MarkerTrackingPlugin({
+            dictionary: 'ARUCO_4X4_50',
+            markerSize: 0.1,
+          }));
+
+        // Listen for marker detection events
+        ar.on('marker:detected', (marker) => {
+          if (!markerAnchors.has(marker.id)) {
+            createMarkerCube(marker.id);
+            updateStatus(`✨ Found marker ${marker.id}!`, 'success');
+          }
+          updateMarkerTransform(marker.id, marker.pose);
+        });
+
+        // Listen for frame updates
+        ar.on('frame', (frame) => {
+          const markers = frame.markers || [];
+          updateMarkerList(markers);
+
+          // Remove lost markers
+          const currentMarkers = new Set(markers.map(m => m.id));
+          for (const id of markerAnchors.keys()) {
+            if (!currentMarkers.has(id)) {
+              removeMarker(id);
+            }
+          }
+        });
+
+        // Handle errors
+        ar.on('error', (error) => {
+          console.error('AR Error:', error);
+          updateStatus(error.message, 'error');
+        });
+
+        // Initialize and start
+        await ar.initialize();
+        updateStatus('AR Engine initialized!', 'success');
+
+        await ar.start();
+        updateStatus('AR Engine running!', 'success');
+
+        // Start render loop
+        engine.runRenderLoop(() => scene.render());
+
+        return ar;
+      } catch (error) {
+        console.error('Failed to initialize:', error);
+        updateStatus(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    // Download marker helper
+    window.downloadMarker = function() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 400;
+      canvas.height = 400;
+      const ctx = canvas.getContext('2d');
+
+      // White background
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, 400, 400);
+
+      // Black border
+      ctx.fillStyle = 'black';
+      ctx.fillRect(50, 50, 300, 300);
+
+      // White inner border
+      ctx.fillStyle = 'white';
+      ctx.fillRect(75, 75, 250, 250);
+
+      // Simple 4x4 pattern (ID 0)
+      const cellSize = 50;
+      const pattern = [[0,0,0,0],[0,1,1,0],[0,1,1,0],[0,0,0,0]];
+
+      ctx.fillStyle = 'black';
+      for (let y = 0; y < 4; y++) {
+        for (let x = 0; x < 4; x++) {
+          if (pattern[y][x] === 1) {
+            ctx.fillRect(87.5 + x * cellSize, 87.5 + y * cellSize, cellSize, cellSize);
+          }
+        }
+      }
+
+      ctx.font = 'bold 20px Arial';
+      ctx.fillStyle = 'black';
+      ctx.textAlign = 'center';
+      ctx.fillText('ArUco Marker ID: 0', 200, 380);
+
+      canvas.toBlob((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'aruco-marker-0.png';
+        a.click();
+        URL.revokeObjectURL(url);
+        updateStatus('✅ Marker downloaded!', 'success');
+      });
+    };
+
+    // Start
+    initAR();
+    window.addEventListener('resize', () => engine.resize());
+  </script>
+</body>
+</html>

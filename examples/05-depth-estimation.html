@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BabylonJS AR V2 - Depth Estimation</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui; background: #1a1a1a; color: white; overflow: hidden; }
+    #container { display: flex; height: 100vh; }
+    #videoContainer { flex: 1; position: relative; background: #000; }
+    video { width: 100%; height: 100%; object-fit: cover; }
+    #depthCanvas { position: absolute; top: 10px; right: 10px; width: 320px; height: 240px; border: 2px solid #4CAF50; border-radius: 8px; }
+    .controls { width: 300px; background: #2a2a2a; padding: 20px; }
+    h1 { font-size: 18px; margin-bottom: 15px; color: #4CAF50; }
+    .status { padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; }
+    .status.info { background: rgba(0,150,255,0.2); border: 1px solid #0096ff; }
+    .status.success { background: rgba(0,255,0,0.2); border: 1px solid #00ff00; }
+    .status.error { background: rgba(255,0,0,0.2); border: 1px solid #ff0000; }
+    .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #444; }
+    .stat-label { color: #aaa; }
+    .stat-value { color: #4CAF50; font-weight: bold; }
+    select { width: 100%; padding: 8px; background: #3a3a3a; border: 1px solid #555; border-radius: 4px; color: white; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="videoContainer">
+      <video id="video" autoplay playsinline></video>
+      <canvas id="depthCanvas"></canvas>
+    </div>
+
+    <div class="controls">
+      <h1>📊 Depth Estimation (V2)</h1>
+      <div id="status" class="status info">Initializing...</div>
+
+      <label style="color:#aaa;font-size:14px;">Quality Level:</label>
+      <select id="qualitySelect">
+        <option value="low">Low (Mobile)</option>
+        <option value="medium" selected>Medium (Desktop)</option>
+        <option value="high">High (High-end)</option>
+      </select>
+
+      <div style="margin-top:20px;">
+        <div class="stat">
+          <span class="stat-label">FPS:</span>
+          <span class="stat-value" id="fps">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Depth Maps:</span>
+          <span class="stat-value" id="depthCount">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Resolution:</span>
+          <span class="stat-value" id="resolution">0x0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { AREngine, DepthEstimationPlugin } from '../dist/index.js';
+
+    function updateStatus(msg, type = 'info') {
+      document.getElementById('status').textContent = msg;
+      document.getElementById('status').className = `status ${type}`;
+    }
+
+    const depthCanvas = document.getElementById('depthCanvas');
+    const depthCtx = depthCanvas.getContext('2d');
+    let depthCount = 0;
+
+    async function initAR() {
+      try {
+        updateStatus('Initializing AR Engine...', 'info');
+
+        const quality = document.getElementById('qualitySelect').value;
+
+        const ar = new AREngine()
+          .use(new DepthEstimationPlugin({
+            quality: quality,
+            inferenceInterval: 100,
+          }));
+
+        ar.on('depth:available', (depthMap) => {
+          depthCount++;
+          document.getElementById('depthCount').textContent = depthCount;
+          document.getElementById('resolution').textContent = `${depthMap.width}x${depthMap.height}`;
+
+          // Visualize depth
+          if (depthMap.toColorMappedImageData) {
+            const colorMapped = depthMap.toColorMappedImageData('turbo');
+            depthCanvas.width = colorMapped.width;
+            depthCanvas.height = colorMapped.height;
+            depthCtx.putImageData(colorMapped, 0, 0);
+          }
+        });
+
+        ar.on('fps:change', (fps) => {
+          document.getElementById('fps').textContent = fps;
+        });
+
+        ar.on('error', (error) => {
+          console.error('AR Error:', error);
+          updateStatus(error.message, 'error');
+        });
+
+        await ar.initialize();
+        updateStatus('AR Engine initialized!', 'success');
+
+        await ar.start();
+        updateStatus('AR Engine running!', 'success');
+
+        return ar;
+      } catch (error) {
+        console.error('Failed to initialize:', error);
+        updateStatus(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    initAR();
+  </script>
+</body>
+</html>

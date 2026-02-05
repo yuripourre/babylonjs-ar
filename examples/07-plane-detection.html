@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BabylonJS AR V2 - Plane Detection</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui; background: #1a1a1a; color: white; overflow: hidden; }
+    #renderCanvas { width: 100%; height: 100vh; display: block; touch-action: none; }
+    .controls { position: fixed; top: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; z-index: 1000; max-width: 350px; }
+    h1 { font-size: 18px; margin-bottom: 15px; color: #9C27B0; }
+    .status { padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; }
+    .status.info { background: rgba(156,39,176,0.2); border: 1px solid #9C27B0; }
+    .status.success { background: rgba(0,255,0,0.2); border: 1px solid #00ff00; }
+    .status.error { background: rgba(255,0,0,0.2); border: 1px solid #ff0000; }
+    .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #444; }
+    .stat-label { color: #aaa; }
+    .stat-value { color: #9C27B0; font-weight: bold; }
+    .plane-list { max-height: 150px; overflow-y: auto; margin-top: 10px; }
+    .plane-item { padding: 8px; margin: 5px 0; background: rgba(156,39,176,0.1); border-radius: 3px; border-left: 3px solid #9C27B0; }
+  </style>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+
+  <div class="controls">
+    <h1>✈️ Plane Detection (V2)</h1>
+    <div id="status" class="status info">Initializing...</div>
+
+    <div style="margin-top:15px;">
+      <div class="stat">
+        <span class="stat-label">FPS:</span>
+        <span class="stat-value" id="fps">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Planes Detected:</span>
+        <span class="stat-value" id="planeCount">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Total Area:</span>
+        <span class="stat-value" id="totalArea">0 m²</span>
+      </div>
+    </div>
+
+    <div class="plane-list" id="planeList">
+      <div style="text-align:center;opacity:0.6;padding:10px;">No planes detected</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script type="module">
+    import { AREngine } from '../dist/index.js';
+    import { PlaneDetector } from '../dist/index.js';
+
+    function updateStatus(msg, type = 'info') {
+      document.getElementById('status').textContent = msg;
+      document.getElementById('status').className = `status ${type}`;
+    }
+
+    // Create Babylon.js scene
+    const canvas = document.getElementById('renderCanvas');
+    const engine = new BABYLON.Engine(canvas, true);
+    const scene = new BABYLON.Scene(engine);
+
+    // Camera
+    const camera = new BABYLON.ArcRotateCamera('camera', 0, Math.PI / 4, 10, BABYLON.Vector3.Zero(), scene);
+    camera.attachControl(canvas, true);
+
+    // Light
+    const light = new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), scene);
+
+    // Store detected planes
+    const planeMeshes = new Map();
+
+    function createPlaneMesh(plane) {
+      const size = Math.sqrt(plane.area);
+      const mesh = BABYLON.MeshBuilder.CreatePlane(
+        `plane-${plane.id || 'unknown'}`,
+        { width: size, height: size },
+        scene
+      );
+
+      const material = new BABYLON.StandardMaterial(`planeMat-${plane.id}`, scene);
+
+      // Color based on plane type
+      if (plane.normal && plane.normal.y > 0.8) {
+        material.diffuseColor = new BABYLON.Color3(0.3, 0.7, 1); // Blue for horizontal
+      } else {
+        material.diffuseColor = new BABYLON.Color3(1, 0.5, 0.2); // Orange for vertical
+      }
+
+      material.alpha = 0.5;
+      material.backFaceCulling = false;
+      mesh.material = material;
+
+      // Position at plane centroid
+      if (plane.centroid) {
+        mesh.position = new BABYLON.Vector3(
+          plane.centroid.x,
+          plane.centroid.y,
+          plane.centroid.z
+        );
+      }
+
+      // Orient to plane normal
+      if (plane.normal) {
+        const up = new BABYLON.Vector3(plane.normal.x, plane.normal.y, plane.normal.z);
+        const forward = BABYLON.Vector3.Cross(up, BABYLON.Vector3.Right());
+        const right = BABYLON.Vector3.Cross(forward, up);
+
+        const matrix = BABYLON.Matrix.Identity();
+        BABYLON.Matrix.FromValuesToRef(
+          right.x, right.y, right.z, 0,
+          up.x, up.y, up.z, 0,
+          forward.x, forward.y, forward.z, 0,
+          0, 0, 0, 1,
+          matrix
+        );
+
+        mesh.rotationQuaternion = BABYLON.Quaternion.FromRotationMatrix(matrix);
+      }
+
+      planeMeshes.set(plane.id || 0, mesh);
+      console.log(`Created plane mesh for plane ${plane.id}`);
+      return mesh;
+    }
+
+    function updatePlaneList(planes) {
+      const listEl = document.getElementById('planeList');
+
+      if (planes.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center;opacity:0.6;padding:10px;">No planes detected</div>';
+        document.getElementById('planeCount').textContent = '0';
+        document.getElementById('totalArea').textContent = '0 m²';
+        return;
+      }
+
+      let totalArea = 0;
+      listEl.innerHTML = planes.map((p, i) => {
+        totalArea += p.area || 0;
+        const type = (p.normal && p.normal.y > 0.8) ? 'Horizontal' : 'Vertical';
+        return `
+          <div class="plane-item">
+            <strong>Plane ${i + 1}</strong> (${type})<br>
+            <small>Area: ${(p.area || 0).toFixed(2)} m² |
+            Confidence: ${((p.confidence || 0) * 100).toFixed(0)}%</small>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('planeCount').textContent = planes.length;
+      document.getElementById('totalArea').textContent = totalArea.toFixed(2) + ' m²';
+    }
+
+    async function initAR() {
+      try {
+        updateStatus('Initializing AR Engine...', 'info');
+
+        // Create AR engine
+        const ar = new AREngine();
+
+        // Note: Plane detection would be added via a PlaneDetectionPlugin when available
+        // For now, this example demonstrates the UI structure
+
+        ar.on('plane:detected', (plane) => {
+          if (!planeMeshes.has(plane.id || 0)) {
+            createPlaneMesh(plane);
+            updateStatus(`✨ Detected ${planeMeshes.size} planes!`, 'success');
+          }
+        });
+
+        ar.on('frame', (frame) => {
+          const planes = frame.planes || [];
+          updatePlaneList(planes);
+
+          // Update existing plane meshes
+          for (const plane of planes) {
+            const mesh = planeMeshes.get(plane.id || 0);
+            if (mesh && plane.centroid) {
+              mesh.position = new BABYLON.Vector3(
+                plane.centroid.x,
+                plane.centroid.y,
+                plane.centroid.z
+              );
+            }
+          }
+
+          // Remove lost planes
+          const currentPlaneIds = new Set(planes.map(p => p.id || 0));
+          for (const [id, mesh] of planeMeshes) {
+            if (!currentPlaneIds.has(id)) {
+              mesh.dispose();
+              planeMeshes.delete(id);
+            }
+          }
+        });
+
+        ar.on('fps:change', (fps) => {
+          document.getElementById('fps').textContent = fps;
+        });
+
+        ar.on('error', (error) => {
+          console.error('AR Error:', error);
+          updateStatus(error.message, 'error');
+        });
+
+        await ar.initialize();
+        updateStatus('AR Engine initialized!', 'success');
+
+        await ar.start();
+        updateStatus('Detecting planes... Move camera to scan surfaces', 'info');
+
+        // Start render loop
+        engine.runRenderLoop(() => scene.render());
+
+        return ar;
+      } catch (error) {
+        console.error('Failed to initialize:', error);
+        updateStatus(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    initAR();
+    window.addEventListener('resize', () => engine.resize());
+  </script>
+</body>
+</html>

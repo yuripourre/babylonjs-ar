@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BabylonJS AR V2 - WebXR Integration</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui; background: #1a1a1a; color: white; overflow: hidden; }
+    #renderCanvas { width: 100%; height: 100vh; display: block; }
+    .controls { position: fixed; top: 20px; left: 20px; background: rgba(0,0,0,0.9); padding: 20px; border-radius: 10px; z-index: 1000; max-width: 350px; }
+    h1 { font-size: 18px; margin-bottom: 15px; color: #00BCD4; }
+    .status { padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; }
+    .status.info { background: rgba(0,188,212,0.2); border: 1px solid #00BCD4; }
+    .status.success { background: rgba(0,255,0,0.2); border: 1px solid #00ff00; }
+    .status.error { background: rgba(255,0,0,0.2); border: 1px solid #ff0000; }
+    button { background: #00BCD4; color: white; border: none; padding: 12px 20px; border-radius: 5px; cursor: pointer; width: 100%; margin: 5px 0; font-size: 14px; }
+    button:disabled { background: #666; cursor: not-allowed; }
+    .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #444; }
+    .stat-value { color: #00BCD4; font-weight: bold; }
+    .feature { padding: 8px; margin: 5px 0; background: rgba(0,188,212,0.1); border-radius: 3px; }
+    .feature.available { border-left: 3px solid #00ff00; }
+    .feature.unavailable { border-left: 3px solid #ff0000; }
+  </style>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+
+  <div class="controls">
+    <h1>🥽 WebXR Integration (V2)</h1>
+    <div id="status" class="status info">Click "Enter AR" to start...</div>
+
+    <button id="enterARBtn">Enter AR</button>
+    <button id="exitARBtn" disabled>Exit AR</button>
+
+    <div style="margin-top:15px;">
+      <h3 style="font-size:14px;color:#00BCD4;margin-bottom:10px;">XR Features</h3>
+      <div id="features"></div>
+    </div>
+
+    <div style="margin-top:15px;">
+      <div class="stat">
+        <span>Session State:</span>
+        <span class="stat-value" id="sessionState">Not Started</span>
+      </div>
+      <div class="stat">
+        <span>FPS:</span>
+        <span class="stat-value" id="fps">0</span>
+      </div>
+      <div class="stat">
+        <span>Hit Test Results:</span>
+        <span class="stat-value" id="hitTestCount">0</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script type="module">
+    import { AREngine } from '../dist/index.js';
+
+    function updateStatus(msg, type = 'info') {
+      document.getElementById('status').textContent = msg;
+      document.getElementById('status').className = `status ${type}`;
+    }
+
+    const canvas = document.getElementById('renderCanvas');
+    const engine = new BABYLON.Engine(canvas, true);
+    const scene = new BABYLON.Scene(engine);
+
+    const camera = new BABYLON.ArcRotateCamera('camera', 0, Math.PI / 4, 10, BABYLON.Vector3.Zero(), scene);
+    camera.attachControl(canvas, true);
+
+    const light = new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), scene);
+
+    let xrHelper = null;
+
+    // Check WebXR support
+    async function checkXRSupport() {
+      const featuresDiv = document.getElementById('features');
+
+      if (!navigator.xr) {
+        featuresDiv.innerHTML = `
+          <div class="feature unavailable">
+            <strong>❌ WebXR Not Supported</strong><br>
+            <small>This browser doesn't support WebXR</small>
+          </div>
+        `;
+        return false;
+      }
+
+      try {
+        const supported = await navigator.xr.isSessionSupported('immersive-ar');
+        if (supported) {
+          featuresDiv.innerHTML = `
+            <div class="feature available">
+              <strong>✅ Immersive AR</strong><br>
+              <small>Full immersive AR sessions supported</small>
+            </div>
+          `;
+
+          // Check for hit-test support
+          const hitTestSupported = await navigator.xr.isSessionSupported('immersive-ar');
+          if (hitTestSupported) {
+            featuresDiv.innerHTML += `
+              <div class="feature available">
+                <strong>✅ Hit Testing</strong><br>
+                <small>Ray-plane intersection supported</small>
+              </div>
+            `;
+          }
+
+          return true;
+        } else {
+          featuresDiv.innerHTML = `
+            <div class="feature unavailable">
+              <strong>⚠️ AR Not Available</strong><br>
+              <small>Immersive AR sessions not supported on this device</small>
+            </div>
+          `;
+          return false;
+        }
+      } catch (error) {
+        featuresDiv.innerHTML = `
+          <div class="feature unavailable">
+            <strong>❌ Error Checking Support</strong><br>
+            <small>${error.message}</small>
+          </div>
+        `;
+        return false;
+      }
+    }
+
+    async function enterAR() {
+      try {
+        updateStatus('Starting WebXR AR session...', 'info');
+        document.getElementById('sessionState').textContent = 'Starting...';
+
+        // Create XR helper
+        xrHelper = await scene.createDefaultXRExperienceAsync({
+          uiOptions: {
+            sessionMode: 'immersive-ar',
+          },
+          optionalFeatures: true,
+        });
+
+        if (!xrHelper.baseExperience) {
+          throw new Error('Failed to create XR experience');
+        }
+
+        // Enter XR session
+        await xrHelper.baseExperience.enterXRAsync('immersive-ar', 'local-floor');
+
+        updateStatus('AR Session Active!', 'success');
+        document.getElementById('sessionState').textContent = 'Active';
+        document.getElementById('enterARBtn').disabled = true;
+        document.getElementById('exitARBtn').disabled = false;
+
+        // Setup hit testing
+        const hitTest = xrHelper.baseExperience.featuresManager.enableFeature(
+          BABYLON.WebXRHitTest,
+          'latest',
+          { offsetRay: { origin: { x: 0, y: 0, z: 0 }, direction: { x: 0, y: 0, z: -1 } } }
+        );
+
+        if (hitTest) {
+          hitTest.onHitTestResultObservable.add((results) => {
+            document.getElementById('hitTestCount').textContent = results.length;
+
+            if (results.length > 0) {
+              // Could place objects at hit test points
+            }
+          });
+        }
+
+        // Handle session end
+        xrHelper.baseExperience.sessionManager.onXRSessionEnded.add(() => {
+          updateStatus('AR Session Ended', 'info');
+          document.getElementById('sessionState').textContent = 'Ended';
+          document.getElementById('enterARBtn').disabled = false;
+          document.getElementById('exitARBtn').disabled = true;
+        });
+
+      } catch (error) {
+        console.error('Failed to enter AR:', error);
+        updateStatus(`Error: ${error.message}`, 'error');
+        document.getElementById('sessionState').textContent = 'Error';
+      }
+    }
+
+    async function exitAR() {
+      if (xrHelper && xrHelper.baseExperience) {
+        await xrHelper.baseExperience.exitXRAsync();
+        updateStatus('Exited AR session', 'info');
+      }
+    }
+
+    // Setup AR engine for marker tracking
+    async function initAR() {
+      try {
+        const ar = new AREngine();
+
+        ar.on('fps:change', (fps) => {
+          document.getElementById('fps').textContent = fps;
+        });
+
+        ar.on('error', (error) => {
+          console.error('AR Error:', error);
+          updateStatus(error.message, 'error');
+        });
+
+        await ar.initialize();
+        await ar.start();
+
+        engine.runRenderLoop(() => scene.render());
+
+      } catch (error) {
+        console.error('Failed to initialize:', error);
+        updateStatus(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    // Event listeners
+    document.getElementById('enterARBtn').addEventListener('click', enterAR);
+    document.getElementById('exitARBtn').addEventListener('click', exitAR);
+
+    // Initialize
+    checkXRSupport().then(supported => {
+      if (supported) {
+        updateStatus('WebXR supported! Click "Enter AR" to start', 'success');
+      } else {
+        updateStatus('WebXR not available on this device', 'error');
+        document.getElementById('enterARBtn').disabled = true;
+      }
+    });
+
+    initAR();
+    window.addEventListener('resize', () => engine.resize());
+  </script>
+</body>
+</html>

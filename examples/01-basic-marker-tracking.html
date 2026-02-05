@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BabylonJS AR V2 - Basic Marker Tracking</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui; background: #1a1a1a; color: white; overflow: hidden; }
+    #renderCanvas { width: 100%; height: 100vh; display: block; touch-action: none; }
+    .controls { position: fixed; top: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; z-index: 1000; max-width: 350px; }
+    h1 { font-size: 20px; margin-bottom: 15px; color: #00d9ff; }
+    .status { padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; }
+    .status.info { background: rgba(0,150,255,0.2); border: 1px solid #0096ff; }
+    .status.success { background: rgba(0,255,0,0.2); border: 1px solid #00ff00; }
+    .status.error { background: rgba(255,0,0,0.2); border: 1px solid #ff0000; }
+    .stats { font-size: 13px; margin-top: 10px; }
+    .stat-item { display: flex; justify-content: space-between; margin: 5px 0; }
+  </style>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+  
+  <div class="controls">
+    <h1>🎯 Basic Marker Tracking (V2)</h1>
+    <div id="status" class="status info">Initializing...</div>
+    <div class="stats">
+      <div class="stat-item"><span>FPS:</span><span id="fps">0</span></div>
+      <div class="stat-item"><span>Markers:</span><span id="markerCount">0</span></div>
+    </div>
+    <div id="markerList"></div>
+  </div>
+
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script type="module">
+    import { AREngine, MarkerTrackingPlugin } from '../dist/index.js';
+
+    function updateStatus(msg, type = 'info') {
+      document.getElementById('status').textContent = msg;
+      document.getElementById('status').className = `status ${type}`;
+    }
+
+    // Create Babylon.js scene
+    const canvas = document.getElementById('renderCanvas');
+    const engine = new BABYLON.Engine(canvas, true);
+    const scene = new BABYLON.Scene(engine);
+
+    // Camera
+    const camera = new BABYLON.ArcRotateCamera('camera', 0, Math.PI / 4, 10, BABYLON.Vector3.Zero(), scene);
+    camera.attachControl(canvas, true);
+
+    // Light
+    const light = new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), scene);
+
+    // Store marker cubes
+    const markerCubes = new Map();
+
+    // Initialize AR Engine (V2 API)
+    async function initAR() {
+      try {
+        updateStatus('Initializing AR Engine...', 'info');
+
+        // Create AR engine with marker tracking plugin
+        const ar = new AREngine()
+          .use(new MarkerTrackingPlugin({
+            dictionary: 'ARUCO_4X4_50',
+            markerSize: 0.1,
+          }));
+
+        // Listen for marker detection events
+        ar.on('marker:detected', (marker) => {
+          if (!markerCubes.has(marker.id)) {
+            // Create cube for new marker
+            const cube = BABYLON.MeshBuilder.CreateBox(`marker-${marker.id}`, { size: 0.05 }, scene);
+            const material = new BABYLON.StandardMaterial(`mat-${marker.id}`, scene);
+            material.diffuseColor = BABYLON.Color3.Random();
+            cube.material = material;
+            markerCubes.set(marker.id, cube);
+          }
+
+          // Update cube position from marker pose
+          const cube = markerCubes.get(marker.id);
+          if (marker.pose) {
+            cube.position.set(marker.pose.position.x, marker.pose.position.y, marker.pose.position.z);
+            cube.rotationQuaternion = new BABYLON.Quaternion(
+              marker.pose.rotation.x,
+              marker.pose.rotation.y,
+              marker.pose.rotation.z,
+              marker.pose.rotation.w
+            );
+          }
+        });
+
+        // Listen for FPS updates
+        ar.on('fps:change', (fps) => {
+          document.getElementById('fps').textContent = fps;
+        });
+
+        // Listen for frame updates
+        ar.on('frame', (frame) => {
+          const markers = frame.markers || [];
+          document.getElementById('markerCount').textContent = markers.length;
+          
+          // Update marker list
+          const listEl = document.getElementById('markerList');
+          if (markers.length === 0) {
+            listEl.innerHTML = '<div style="opacity:0.6;margin-top:10px;">No markers detected</div>';
+          } else {
+            listEl.innerHTML = '<div style="margin-top:10px;">' + 
+              markers.map(m => `<div>Marker ${m.id} (${(m.confidence*100).toFixed(0)}%)</div>`).join('') +
+              '</div>';
+          }
+        });
+
+        // Handle errors
+        ar.on('error', (error) => {
+          console.error('AR Error:', error);
+          updateStatus(error.message, 'error');
+        });
+
+        // Initialize and start
+        await ar.initialize();
+        updateStatus('AR Engine initialized!', 'success');
+        
+        await ar.start();
+        updateStatus('AR Engine running!', 'success');
+
+        // Start render loop
+        engine.runRenderLoop(() => scene.render());
+
+        return ar;
+      } catch (error) {
+        console.error('Failed to initialize:', error);
+        updateStatus(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    // Start
+    initAR();
+
+    // Handle resize
+    window.addEventListener('resize', () => engine.resize());
+  </script>
+</body>
+</html>
