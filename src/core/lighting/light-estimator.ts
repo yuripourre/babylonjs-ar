@@ -265,9 +265,9 @@ export class LightEstimator {
     const primaryColor = this.colorTemperatureToRGB(colorTemperature);
 
     // Calculate spherical harmonics
-    let sphericalHarmonics = new Float32Array(27);
+    let sphericalHarmonics: Float32Array = new Float32Array(27);
     if (this.config.enableSphericalHarmonics) {
-      sphericalHarmonics = this.shCalculator.calculateFromImage(imageData);
+      sphericalHarmonics = this.shCalculator.calculateFromImage(imageData) as Float32Array;
     }
 
     return {

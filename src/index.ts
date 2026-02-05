@@ -87,6 +87,38 @@ export {
   type SHCoefficients,
 } from './core/lighting';
 
+// Depth Estimation
+export {
+  DepthEstimator,
+  DepthMap,
+  ModelLoader,
+  globalModelLoader,
+  MODEL_REGISTRY,
+  ImagePreprocessor,
+  GPUImagePreprocessor,
+  type DepthEstimatorConfig,
+  type DepthQuality,
+  type DepthModel,
+  type ModelInfo,
+} from './core/depth';
+
+// Mesh Reconstruction
+export {
+  SparseVoxelGrid,
+  TSDFFusion,
+  MarchingCubes,
+  MeshReconstructor,
+  type VoxelGridConfig,
+  type TSDFFusionConfig,
+  type Voxel,
+  type MeshVertex,
+  type MeshTriangle,
+  type ExtractedMesh,
+  type MarchingCubesConfig,
+  type MeshReconstructorConfig,
+  type ReconstructionStats,
+} from './core/mesh';
+
 export {
   MarkerDetector,
   type MarkerDetectorConfig,
@@ -145,12 +177,7 @@ export {
   type DepthFrame,
 } from './core/depth/depth-manager';
 
-// Estimation
-export {
-  LightEstimator,
-  type LightEstimate,
-  type LightEstimatorConfig,
-} from './core/estimation/light-estimator';
+// Estimation (legacy - occlusion only)
 export {
   OcclusionHandler,
   type OcclusionConfig,
@@ -253,4 +280,4 @@ export {
 export * from './core/constants';
 
 // Version
-export const VERSION = '0.26.0'; // Phase 1: Mobile Performance - Adaptive quality and monitoring
+export const VERSION = '0.27.0'; // Depth Estimation + Mesh Reconstruction complete

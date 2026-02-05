@@ -83,6 +83,17 @@ export class Vector3 {
   }
 
   /**
+   * Linear interpolation to another vector
+   */
+  lerp(other: Vector3, t: number): Vector3 {
+    return new Vector3(
+      this.x + (other.x - this.x) * t,
+      this.y + (other.y - this.y) * t,
+      this.z + (other.z - this.z) * t
+    );
+  }
+
+  /**
    * Clone vector
    */
   clone(): Vector3 {

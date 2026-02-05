@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-time Mesh Reconstruction - BabylonJS AR</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1a1a1a;
+      color: #fff;
+    }
+
+    #container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    #videoContainer {
+      position: relative;
+      flex: 1;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #video {
+      max-width: 100%;
+      max-height: 100%;
+    }
+
+    #depthCanvas {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 256px;
+      height: 192px;
+      border: 2px solid #4CAF50;
+      border-radius: 4px;
+    }
+
+    #canvas3d {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      width: 320px;
+      height: 240px;
+      border: 2px solid #2196F3;
+      border-radius: 4px;
+    }
+
+    #controls {
+      background: #2a2a2a;
+      padding: 20px;
+      border-top: 1px solid #444;
+    }
+
+    .control-group {
+      margin-bottom: 15px;
+    }
+
+    .control-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 14px;
+      color: #aaa;
+    }
+
+    .control-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    button {
+      padding: 10px 20px;
+      background: #4CAF50;
+      border: none;
+      border-radius: 4px;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    button:hover {
+      background: #45a049;
+    }
+
+    button:disabled {
+      background: #666;
+      cursor: not-allowed;
+    }
+
+    select, input[type="range"] {
+      padding: 8px;
+      background: #3a3a3a;
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: white;
+      flex: 1;
+    }
+
+    #stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+      margin-top: 15px;
+    }
+
+    .stat {
+      background: #3a3a3a;
+      padding: 12px;
+      border-radius: 4px;
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #aaa;
+      margin-bottom: 5px;
+    }
+
+    .stat-value {
+      font-size: 20px;
+      font-weight: bold;
+      color: #4CAF50;
+    }
+
+    #status {
+      text-align: center;
+      padding: 10px;
+      background: #3a3a3a;
+      border-radius: 4px;
+      margin-bottom: 15px;
+    }
+
+    .status-ready { color: #4CAF50; }
+    .status-processing { color: #2196F3; }
+    .status-error { color: #f44336; }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="videoContainer">
+      <video id="video" autoplay playsinline></video>
+      <canvas id="depthCanvas"></canvas>
+      <canvas id="canvas3d"></canvas>
+    </div>
+
+    <div id="controls">
+      <div id="status" class="status-ready">Ready to start</div>
+
+      <div class="control-group">
+        <div class="control-row">
+          <button id="startBtn">Start Camera</button>
+          <button id="extractBtn" disabled>Extract Mesh Now</button>
+          <button id="resetBtn" disabled>Reset</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label>Depth Quality:</label>
+        <select id="qualitySelect">
+          <option value="low">Low (Mobile)</option>
+          <option value="medium" selected>Medium (Desktop)</option>
+          <option value="high">High (High-end)</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>Voxel Size: <span id="voxelSizeValue">0.01m</span></label>
+        <input type="range" id="voxelSize" min="0.005" max="0.05" step="0.005" value="0.01">
+      </div>
+
+      <div class="control-group">
+        <label>Mesh Extraction Interval: <span id="intervalValue">30 frames</span></label>
+        <input type="range" id="extractInterval" min="10" max="120" step="10" value="30">
+      </div>
+
+      <div id="stats">
+        <div class="stat">
+          <div class="stat-label">Depth FPS</div>
+          <div class="stat-value" id="depthFps">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Voxels</div>
+          <div class="stat-value" id="voxelCount">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Triangles</div>
+          <div class="stat-value" id="triangleCount">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Memory (MB)</div>
+          <div class="stat-value" id="memoryUsage">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Integration (ms)</div>
+          <div class="stat-value" id="integrationTime">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Frames Integrated</div>
+          <div class="stat-value" id="frameCount">0</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import {
+      DepthEstimator,
+      MeshReconstructor,
+      Matrix4,
+      Vector3
+    } from '../dist/babylonjs-ar.js';
+
+    // UI Elements
+    const video = document.getElementById('video');
+    const depthCanvas = document.getElementById('depthCanvas');
+    const canvas3d = document.getElementById('canvas3d');
+    const startBtn = document.getElementById('startBtn');
+    const extractBtn = document.getElementById('extractBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const status = document.getElementById('status');
+    const qualitySelect = document.getElementById('qualitySelect');
+    const voxelSizeInput = document.getElementById('voxelSize');
+    const voxelSizeValue = document.getElementById('voxelSizeValue');
+    const intervalInput = document.getElementById('extractInterval');
+    const intervalValue = document.getElementById('intervalValue');
+
+    // System state
+    let depthEstimator = null;
+    let meshReconstructor = null;
+    let isRunning = false;
+    let depthCtx = depthCanvas.getContext('2d');
+    let ctx3d = canvas3d.getContext('2d');
+    let frameCounter = 0;
+    let lastDepthTime = 0;
+    let depthFpsCounter = 0;
+
+    // Update UI values
+    voxelSizeInput.addEventListener('input', (e) => {
+      voxelSizeValue.textContent = `${e.target.value}m`;
+    });
+
+    intervalInput.addEventListener('input', (e) => {
+      intervalValue.textContent = `${e.target.value} frames`;
+      if (meshReconstructor) {
+        meshReconstructor.setExtractionInterval(parseInt(e.target.value));
+      }
+    });
+
+    // Initialize system
+    async function initialize() {
+      try {
+        setStatus('Initializing depth estimator...', 'processing');
+
+        const quality = qualitySelect.value;
+        depthEstimator = new DepthEstimator({ quality });
+
+        await depthEstimator.initialize();
+
+        setStatus('Initializing mesh reconstructor...', 'processing');
+
+        const voxelSize = parseFloat(voxelSizeInput.value);
+        meshReconstructor = new MeshReconstructor({
+          voxelSize: voxelSize,
+          truncationDistance: voxelSize * 5,
+          maxWeight: 10.0,
+          maxVoxels: quality === 'low' ? 500000 : 1000000,
+          meshExtractionInterval: parseInt(intervalInput.value),
+        });
+
+        setStatus('Ready! System initialized', 'ready');
+        return true;
+      } catch (error) {
+        setStatus(`Error: ${error.message}`, 'error');
+        console.error('Initialization error:', error);
+        return false;
+      }
+    }
+
+    // Start camera
+    async function startCamera() {
+      try {
+        setStatus('Requesting camera access...', 'processing');
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+
+        video.srcObject = stream;
+        await video.play();
+
+        setStatus('Initializing AR system...', 'processing');
+
+        const success = await initialize();
+        if (!success) return;
+
+        setStatus('Running - Move camera to scan environment', 'processing');
+
+        isRunning = true;
+        startBtn.disabled = true;
+        extractBtn.disabled = false;
+        resetBtn.disabled = false;
+
+        requestAnimationFrame(processFrame);
+      } catch (error) {
+        setStatus(`Camera error: ${error.message}`, 'error');
+        console.error('Camera error:', error);
+      }
+    }
+
+    // Main processing loop
+    async function processFrame() {
+      if (!isRunning) return;
+
+      frameCounter++;
+
+      // Estimate depth
+      const depthMap = await depthEstimator.estimateDepth(video);
+
+      if (depthMap) {
+        // Update depth FPS
+        const now = performance.now();
+        if (now - lastDepthTime > 1000) {
+          document.getElementById('depthFps').textContent =
+            depthFpsCounter.toFixed(1);
+          depthFpsCounter = 0;
+          lastDepthTime = now;
+        }
+        depthFpsCounter++;
+
+        // Visualize depth
+        visualizeDepth(depthMap);
+
+        // Integrate into mesh (with mock camera pose)
+        const cameraPose = getCameraPose();
+        const cameraIntrinsics = getCameraIntrinsics();
+
+        meshReconstructor.integrateDepth(
+          depthMap,
+          cameraPose,
+          cameraIntrinsics
+        );
+
+        // Update statistics
+        updateStats();
+
+        // Visualize mesh if available
+        const mesh = meshReconstructor.getLastMesh();
+        if (mesh) {
+          visualizeMesh(mesh);
+        }
+      }
+
+      requestAnimationFrame(processFrame);
+    }
+
+    // Visualize depth map
+    function visualizeDepth(depthMap) {
+      const colorMapped = depthMap.toColorMappedImageData('turbo');
+      depthCanvas.width = colorMapped.width;
+      depthCanvas.height = colorMapped.height;
+      depthCtx.putImageData(colorMapped, 0, 0);
+    }
+
+    // Visualize mesh (simple 2D projection)
+    function visualizeMesh(mesh) {
+      ctx3d.fillStyle = '#000';
+      ctx3d.fillRect(0, 0, canvas3d.width, canvas3d.height);
+
+      const { vertices, triangles } = mesh;
+      if (vertices.length === 0) return;
+
+      // Simple orthographic projection
+      ctx3d.strokeStyle = '#2196F3';
+      ctx3d.lineWidth = 1;
+
+      for (const triangle of triangles) {
+        const [i0, i1, i2] = triangle.vertices;
+        const v0 = projectVertex(vertices[i0].position);
+        const v1 = projectVertex(vertices[i1].position);
+        const v2 = projectVertex(vertices[i2].position);
+
+        ctx3d.beginPath();
+        ctx3d.moveTo(v0.x, v0.y);
+        ctx3d.lineTo(v1.x, v1.y);
+        ctx3d.lineTo(v2.x, v2.y);
+        ctx3d.closePath();
+        ctx3d.stroke();
+      }
+    }
+
+    // Simple 2D projection for visualization
+    function projectVertex(v) {
+      const scale = 100;
+      const centerX = canvas3d.width / 2;
+      const centerY = canvas3d.height / 2;
+
+      return {
+        x: centerX + v.x * scale,
+        y: centerY - v.y * scale
+      };
+    }
+
+    // Mock camera pose (identity matrix for now)
+    function getCameraPose() {
+      return Matrix4.identity();
+    }
+
+    // Mock camera intrinsics
+    function getCameraIntrinsics() {
+      return {
+        fx: 500,
+        fy: 500,
+        cx: video.videoWidth / 2,
+        cy: video.videoHeight / 2,
+        width: video.videoWidth,
+        height: video.videoHeight
+      };
+    }
+
+    // Update statistics display
+    function updateStats() {
+      const stats = meshReconstructor.getStats();
+
+      document.getElementById('voxelCount').textContent =
+        stats.voxelCount.toLocaleString();
+      document.getElementById('triangleCount').textContent =
+        stats.lastMeshTriangles.toLocaleString();
+      document.getElementById('memoryUsage').textContent =
+        stats.memoryUsageMB.toFixed(1);
+      document.getElementById('integrationTime').textContent =
+        stats.averageIntegrationTimeMs.toFixed(1);
+      document.getElementById('frameCount').textContent =
+        stats.integratedFrames;
+    }
+
+    // Extract mesh manually
+    function extractMesh() {
+      const mesh = meshReconstructor.extractMesh();
+      setStatus(`Extracted: ${mesh.vertices.length} vertices, ${mesh.triangles.length} triangles`, 'ready');
+      visualizeMesh(mesh);
+    }
+
+    // Reset reconstruction
+    function reset() {
+      if (meshReconstructor) {
+        meshReconstructor.reset();
+        ctx3d.fillStyle = '#000';
+        ctx3d.fillRect(0, 0, canvas3d.width, canvas3d.height);
+        setStatus('Reset complete - scanning restarted', 'processing');
+      }
+    }
+
+    // Set status message
+    function setStatus(message, type) {
+      status.textContent = message;
+      status.className = `status-${type}`;
+    }
+
+    // Event listeners
+    startBtn.addEventListener('click', startCamera);
+    extractBtn.addEventListener('click', extractMesh);
+    resetBtn.addEventListener('click', reset);
+
+    // Initial status
+    setStatus('Click "Start Camera" to begin', 'ready');
+  </script>
+</body>
+</html>
