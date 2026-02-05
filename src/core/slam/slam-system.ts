@@ -28,6 +28,7 @@ import { FeatureDetector } from '../detection/feature-detector';
 import { PoseEstimator } from '../tracking/pose-estimator';
 import { Vector3 } from '../math/vector';
 import { Quaternion } from '../math/quaternion';
+import { Logger } from '../../utils/logger';
 import {
   DEFAULT_MIN_KEYFRAME_TRANSLATION,
   DEFAULT_MIN_KEYFRAME_ROTATION,
@@ -50,6 +51,7 @@ import {
 } from '../constants';
 
 export class SLAMSystem {
+  private logger = Logger.create('SLAM');
   private gpuContext: GPUContextManager;
   private config: Required<SLAMConfig>;
 
@@ -141,7 +143,7 @@ export class SLAMSystem {
       driftEstimate: 0,
     };
 
-    console.log('[SLAM System] Initialized with refactored architecture');
+    this.logger.info('Initialized with refactored architecture');
 
     // Initialize VIO if enabled
     if (this.config.useIMU) {
@@ -161,9 +163,9 @@ export class SLAMSystem {
     try {
       this.vio = new VIOManager(this.config);
       await this.vio.initialize();
-      console.log('[SLAM System] VIO enabled');
+      this.logger.info('VIO enabled');
     } catch (error) {
-      console.warn('[SLAM System] VIO initialization failed, continuing without IMU:', error);
+      this.logger.warn('VIO initialization failed, continuing without IMU', error);
       this.vio = null;
     }
   }
@@ -175,9 +177,9 @@ export class SLAMSystem {
     try {
       this.persistence = new MapPersistenceManager(this.map, this.config);
       await this.persistence.initialize();
-      console.log('[SLAM System] Map persistence enabled');
+      this.logger.info('Map persistence enabled');
     } catch (error) {
-      console.warn('[SLAM System] Persistence initialization failed:', error);
+      this.logger.warn('Persistence initialization failed', error);
       this.persistence = null;
     }
   }
@@ -212,7 +214,7 @@ export class SLAMSystem {
     this.state = 'initializing';
     this.stats.state = this.state;
 
-    console.log('[SLAM System] Initialized', {
+    this.logger.info('Initialized', {
       width,
       height,
       intrinsics: this.intrinsics,
@@ -233,7 +235,7 @@ export class SLAMSystem {
     const keypoints = this.featureDetector.getKeypoints();
     const descriptors = this.featureDetector.getDescriptors();
 
-    console.log(`[SLAM] Detected ${keypoints.length} features`);
+    this.logger.debug(`Detected ${keypoints.length} features`);
 
     // Create tracking context
     const context: TrackingContext = {
@@ -277,7 +279,7 @@ export class SLAMSystem {
    * Initialize map with first keyframe
    */
   private async initializeMap(context: TrackingContext): Promise<TrackingResult> {
-    console.log('[SLAM] Initializing map...');
+    this.logger.info('Initializing map...');
 
     // Create initial pose at origin
     const initialPose: CameraPose = {
@@ -303,7 +305,7 @@ export class SLAMSystem {
     // Transition to tracking state
     this.state = 'tracking';
 
-    console.log(`[SLAM] Map initialized with keyframe #${keyframe.id}`);
+    this.logger.info(`Map initialized with keyframe #${keyframe.id}`);
 
     return {
       success: true,
@@ -345,7 +347,7 @@ export class SLAMSystem {
     });
 
     if (keyframe) {
-      console.log(`[SLAM] Created keyframe #${keyframe.id}`);
+      this.logger.info(`Created keyframe #${keyframe.id}`);
     }
 
     return result;
@@ -360,7 +362,7 @@ export class SLAMSystem {
     if (result.success) {
       // Relocalization successful, return to tracking
       this.state = 'tracking';
-      console.log('[SLAM] Relocalization successful');
+      this.logger.info('Relocalization successful');
     }
 
     return result;
@@ -455,7 +457,7 @@ export class SLAMSystem {
       this.state = 'initializing';
     }
 
-    console.log(`[SLAM System] Map loaded: ${id} (${keyframes.length} keyframes)`);
+    this.logger.info(`Map loaded: ${id} (${keyframes.length} keyframes)`);
   }
 
   /**
@@ -467,7 +469,7 @@ export class SLAMSystem {
     }
 
     await this.persistence.deleteMap(id);
-    console.log(`[SLAM System] Map deleted: ${id}`);
+    this.logger.info(`Map deleted: ${id}`);
   }
 
   /**

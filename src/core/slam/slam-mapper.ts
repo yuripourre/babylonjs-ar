@@ -18,6 +18,7 @@ import { Vector3 } from '../math/vector';
 import { Quaternion } from '../math/quaternion';
 import { Matrix4 } from '../math/matrix';
 import { ORB_DESCRIPTOR_BYTES } from '../constants';
+import { Logger } from '../../utils/logger';
 
 export interface KeyframeCreationContext {
   timestamp: number;
@@ -32,6 +33,7 @@ export interface KeyframeCreationContext {
  * Responsible for map management and keyframe creation
  */
 export class SLAMMapper {
+  private logger = Logger.create('SLAMMapper');
   private keyframeManager: KeyframeManager;
   private loopClosureDetector: LoopClosureDetector | null = null;
   private frameCount = 0;
@@ -49,7 +51,7 @@ export class SLAMMapper {
         minInterval: config.loopClosureMinInterval,
         similarityThreshold: config.loopClosureThreshold,
       });
-      console.log('[SLAMMapper] Loop closure detection enabled');
+      this.logger.info(' Loop closure detection enabled');
     }
   }
 
@@ -62,7 +64,7 @@ export class SLAMMapper {
   initializeMap(context: KeyframeCreationContext): Keyframe {
     const { timestamp, pose, keypoints, descriptors } = context;
 
-    console.log('[SLAMMapper] Initializing map with first keyframe');
+    this.logger.info(' Initializing map with first keyframe');
 
     // Create first keyframe
     const keyframe = this.map.addKeyframe({

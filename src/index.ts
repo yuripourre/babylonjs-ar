@@ -17,6 +17,14 @@ export {
   IndirectDispatch,
   type IndirectDispatchConfig,
 } from './core/gpu/indirect-dispatch';
+export {
+  ResourceManager,
+  ResourceGroup,
+  globalResourceManager,
+  type GPUResource,
+  type ResourceMetadata,
+  type ResourceStats,
+} from './core/gpu/resource-manager';
 export { CameraManager, type CameraConfig, type CameraFrame } from './core/camera/camera-manager';
 
 // Tracking and detection
@@ -113,6 +121,16 @@ export {
   type TemporalConfig,
 } from './utils/temporal-coherence';
 export { KDTree } from './utils/kdtree';
+export {
+  Logger,
+  ComponentLogger,
+  PerformanceLogger,
+  logger,
+  LogLevel,
+  type LogEntry,
+  type LogHandler,
+  type LoggerConfig,
+} from './utils/logger';
 
 // Shaders
 export { planeShaders } from './shaders/plane-shaders';
@@ -181,4 +199,4 @@ export {
 export * from './core/constants';
 
 // Version
-export const VERSION = '0.20.0'; // Type Safety: Removed "any" types, added proper interfaces
+export const VERSION = '0.22.0'; // Memory Management: GPU resource tracking and leak detection

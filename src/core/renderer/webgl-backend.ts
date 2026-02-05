@@ -31,13 +31,17 @@ import {
 } from './backend';
 import { WebGLComputeEmulator } from './webgl-compute-emulator';
 import { ShaderConverter } from './shader-converter';
+import { ResourceManager } from '../gpu/resource-manager';
+import { Logger } from '../../utils/logger';
 
 export class WebGL2Backend implements RenderBackend {
   readonly type = 'webgl2' as const;
 
+  private logger = Logger.create('WebGL2Backend');
   private gl: WebGL2RenderingContext | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private computeEmulator: WebGLComputeEmulator | null = null;
+  private resourceManager = new ResourceManager();
 
   // Extensions
   private extensions: {
@@ -86,11 +90,14 @@ export class WebGL2Backend implements RenderBackend {
     // Initialize compute emulator
     this.computeEmulator = new WebGLComputeEmulator(gl);
 
-    console.log('[WebGL2] Initialized successfully with compute emulation');
+    this.logger.info('Initialized successfully with compute emulation');
   }
 
   destroy(): void {
     if (!this.gl) return;
+
+    // Destroy all tracked resources
+    this.resourceManager.destroyAll();
 
     // Clean up compute emulator
     if (this.computeEmulator) {
@@ -98,7 +105,7 @@ export class WebGL2Backend implements RenderBackend {
       this.computeEmulator = null;
     }
 
-    // Clean up resources
+    // Clean up native resources
     for (const texture of this.textures) {
       this.gl.deleteTexture(texture);
     }
@@ -119,6 +126,8 @@ export class WebGL2Backend implements RenderBackend {
 
     this.gl = null;
     this.canvas = null;
+
+    this.logger.info('Backend destroyed');
   }
 
   // Resource creation
@@ -154,13 +163,19 @@ export class WebGL2Backend implements RenderBackend {
 
     this.gl.bindTexture(this.gl.TEXTURE_2D, null);
 
-    return new WebGL2Texture(
+    const webglTexture = new WebGL2Texture(
       this.gl,
       texture,
       descriptor.width,
       descriptor.height,
       descriptor.format
     );
+
+    // Track resource
+    const size = descriptor.width * descriptor.height * this.getFormatSize(descriptor.format);
+    this.resourceManager.track(webglTexture, 'texture', descriptor.label, size);
+
+    return webglTexture;
   }
 
   createBuffer(descriptor: BufferDescriptor): RenderBuffer {
@@ -177,7 +192,12 @@ export class WebGL2Backend implements RenderBackend {
     this.gl.bufferData(target, descriptor.size, this.gl.DYNAMIC_DRAW);
     this.gl.bindBuffer(target, null);
 
-    return new WebGL2Buffer(this.gl, buffer, descriptor.size, descriptor.usage);
+    const webglBuffer = new WebGL2Buffer(this.gl, buffer, descriptor.size, descriptor.usage);
+
+    // Track resource
+    this.resourceManager.track(webglBuffer, 'buffer', descriptor.label, descriptor.size);
+
+    return webglBuffer;
   }
 
   createShader(descriptor: ShaderDescriptor): RenderShader {
@@ -213,7 +233,12 @@ export class WebGL2Backend implements RenderBackend {
       throw new Error(`Shader compilation failed: ${log}\n\nShader code:\n${shaderCode}`);
     }
 
-    return new WebGL2Shader(this.gl, shader, descriptor.type);
+    const webglShader = new WebGL2Shader(this.gl, shader, descriptor.type);
+
+    // Track resource
+    this.resourceManager.track(webglShader, 'shader', descriptor.label);
+
+    return webglShader;
   }
 
   createPipeline(descriptor: PipelineDescriptor): RenderPipeline {
@@ -275,7 +300,12 @@ export class WebGL2Backend implements RenderBackend {
     }
 
     this.programs.add(program);
-    return new WebGL2Pipeline(this.gl, program);
+    const pipeline = new WebGL2Pipeline(this.gl, program);
+
+    // Track resource
+    this.resourceManager.track(pipeline, 'pipeline', 'webgl-pipeline');
+
+    return pipeline;
   }
 
   createBindGroupLayout(entries: import('./backend').BindGroupLayoutEntry[]): RenderBindGroupLayout {
@@ -441,6 +471,25 @@ export class WebGL2Backend implements RenderBackend {
     if (usage & BufferUsage.UNIFORM) return this.gl.UNIFORM_BUFFER;
 
     return this.gl.ARRAY_BUFFER; // Default
+  }
+
+  private getFormatSize(format: TextureFormat): number {
+    // Estimate bytes per pixel for common formats
+    switch (format) {
+      case 'r8unorm': return 1;
+      case 'r32float': return 4;
+      case 'rg32float': return 8;
+      case 'rgba8unorm': return 4;
+      case 'rgba32float': return 16;
+      default: return 4; // Default estimate
+    }
+  }
+
+  /**
+   * Get resource manager for statistics and leak detection
+   */
+  getResourceManager(): ResourceManager {
+    return this.resourceManager;
   }
 }
 

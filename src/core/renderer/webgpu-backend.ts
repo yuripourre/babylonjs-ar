@@ -22,12 +22,16 @@ import {
   TextureUsage,
   BufferUsage,
 } from './backend';
+import { ResourceManager, ResourceGroup } from '../gpu/resource-manager';
+import { Logger } from '../../utils/logger';
 
 export class WebGPUBackend implements RenderBackend {
   readonly type = 'webgpu' as const;
 
+  private logger = Logger.create('WebGPUBackend');
   private adapter: GPUAdapter | null = null;
   private device: GPUDevice | null = null;
+  private resourceManager = new ResourceManager();
 
   async initialize(config: BackendConfig = {}): Promise<void> {
     if (!navigator.gpu) {
@@ -49,13 +53,18 @@ export class WebGPUBackend implements RenderBackend {
     const device = await adapter.requestDevice();
     this.device = device as unknown as GPUDevice;
 
-    console.log('[WebGPU] Initialized successfully');
+    this.logger.info('Initialized successfully');
   }
 
   destroy(): void {
+    // Destroy all tracked resources
+    this.resourceManager.destroyAll();
+
     this.device?.destroy();
     this.device = null;
     this.adapter = null;
+
+    this.logger.info('Backend destroyed');
   }
 
   // Resource creation
@@ -70,7 +79,13 @@ export class WebGPUBackend implements RenderBackend {
       mipLevelCount: descriptor.mipLevelCount,
     });
 
-    return new WebGPUTexture(gpuTexture, descriptor.width, descriptor.height, descriptor.format);
+    const texture = new WebGPUTexture(gpuTexture, descriptor.width, descriptor.height, descriptor.format);
+
+    // Track resource
+    const size = descriptor.width * descriptor.height * this.getFormatSize(descriptor.format);
+    this.resourceManager.track(texture, 'texture', descriptor.label, size);
+
+    return texture;
   }
 
   createBuffer(descriptor: BufferDescriptor): RenderBuffer {
@@ -82,7 +97,12 @@ export class WebGPUBackend implements RenderBackend {
       usage: this.mapBufferUsage(descriptor.usage),
     });
 
-    return new WebGPUBuffer(gpuBuffer, descriptor.size, descriptor.usage);
+    const buffer = new WebGPUBuffer(gpuBuffer, descriptor.size, descriptor.usage);
+
+    // Track resource
+    this.resourceManager.track(buffer, 'buffer', descriptor.label, descriptor.size);
+
+    return buffer;
   }
 
   createShader(descriptor: ShaderDescriptor): RenderShader {
@@ -93,7 +113,12 @@ export class WebGPUBackend implements RenderBackend {
       code: descriptor.code,
     });
 
-    return new WebGPUShader(module, descriptor.type);
+    const shader = new WebGPUShader(module, descriptor.type);
+
+    // Track resource
+    this.resourceManager.track(shader, 'shader', descriptor.label);
+
+    return shader;
   }
 
   createPipeline(descriptor: PipelineDescriptor): RenderPipeline {
@@ -109,7 +134,12 @@ export class WebGPUBackend implements RenderBackend {
         },
       });
 
-      return new WebGPUComputePipeline(pipeline);
+      const computePipeline = new WebGPUComputePipeline(pipeline);
+
+      // Track resource
+      this.resourceManager.track(computePipeline, 'pipeline', descriptor.label);
+
+      return computePipeline;
     }
 
     throw new Error('Only compute pipelines supported currently');
@@ -119,7 +149,12 @@ export class WebGPUBackend implements RenderBackend {
     if (!this.device) throw new Error('Device not initialized');
 
     const layout = this.device.createBindGroupLayout({ entries });
-    return new WebGPUBindGroupLayout(layout);
+    const bindGroupLayout = new WebGPUBindGroupLayout(layout);
+
+    // Track resource
+    this.resourceManager.track(bindGroupLayout, 'bindgrouplayout', `bgl-${entries.length}`);
+
+    return bindGroupLayout;
   }
 
   createBindGroup(layout: RenderBindGroupLayout, entries: BindGroupEntry[]): RenderBindGroup {
@@ -159,7 +194,12 @@ export class WebGPUBackend implements RenderBackend {
       entries: gpuEntries,
     });
 
-    return new WebGPUBindGroup(bindGroup);
+    const webgpuBindGroup = new WebGPUBindGroup(bindGroup);
+
+    // Track resource
+    this.resourceManager.track(webgpuBindGroup, 'bindgroup', `bg-${entries.length}`);
+
+    return webgpuBindGroup;
   }
 
   createCommandEncoder(label?: string): RenderCommandEncoder {
@@ -245,6 +285,25 @@ export class WebGPUBackend implements RenderBackend {
     if (usage & BufferUsage.INDEX) flags |= GPUBufferUsage.INDEX;
     if (usage & BufferUsage.INDIRECT) flags |= GPUBufferUsage.INDIRECT;
     return flags;
+  }
+
+  private getFormatSize(format: string): number {
+    // Estimate bytes per pixel for common formats
+    switch (format) {
+      case 'r8unorm': return 1;
+      case 'r32float': return 4;
+      case 'rg32float': return 8;
+      case 'rgba8unorm': return 4;
+      case 'rgba32float': return 16;
+      default: return 4; // Default estimate
+    }
+  }
+
+  /**
+   * Get resource manager for statistics and leak detection
+   */
+  getResourceManager(): ResourceManager {
+    return this.resourceManager;
   }
 }
 

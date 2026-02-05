@@ -13,6 +13,7 @@ import type { SLAMMapManager } from './slam-map';
 import { FeatureMatcher, type FeatureMatch } from '../matching/feature-matcher';
 import { Vector3 } from '../math/vector';
 import { Quaternion } from '../math/quaternion';
+import { Logger } from '../../utils/logger';
 import {
   FEATURE_MATCH_DISTANCE_THRESHOLD,
   FEATURE_MATCH_RATIO_TEST_THRESHOLD,
@@ -34,6 +35,7 @@ export interface TrackingContext {
  * Responsible for frame-to-frame tracking and relocalization
  */
 export class SLAMTracker {
+  private logger = Logger.create('SLAMTracker');
   private featureMatcher: FeatureMatcher;
   private currentPose: CameraPose | null = null;
   private trackingState: 'tracking' | 'lost' = 'lost';
@@ -68,7 +70,7 @@ export class SLAMTracker {
 
     // Check if we have descriptors
     if (!descriptors || descriptors.length === 0) {
-      console.warn('[SLAMTracker] No descriptors provided for tracking');
+      this.logger.warn('No descriptors provided for tracking');
       return this.handleTrackingFailure(timestamp);
     }
 
@@ -127,7 +129,7 @@ export class SLAMTracker {
   async relocalize(context: TrackingContext): Promise<TrackingResult> {
     const { keypoints, descriptors, timestamp } = context;
 
-    console.log('[SLAMTracker] Attempting relocalization...');
+    this.logger.info('Attempting relocalization...');
 
     // Get all keyframes
     const keyframes = this.map.getAllKeyframes();
@@ -192,7 +194,7 @@ export class SLAMTracker {
     }
 
     // Relocalization failed
-    console.warn('[SLAMTracker] Relocalization failed');
+    this.logger.warn('Relocalization failed');
     return this.handleTrackingFailure(timestamp);
   }
 
